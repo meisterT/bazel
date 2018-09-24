@@ -117,6 +117,19 @@ public class JavaOptions extends FragmentOptions {
   public Label hostJavaBase;
 
   @Option(
+      name = "incompatible_use_remotejdk_as_host_javabase",
+      defaultValue = "false",
+      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+      effectTags = {OptionEffectTag.UNKNOWN},
+      metadataTags = {
+        OptionMetadataTag.INCOMPATIBLE_CHANGE,
+        OptionMetadataTag.TRIGGERED_BY_ALL_INCOMPATIBLE_CHANGES
+      },
+      help =
+      "If enabled, uses a JDK downloaded from a remote repository instead of the embedded JDK.")
+  public boolean useRemoteJdkAsHostJavaBase;
+
+  @Option(
     name = "javacopt",
     allowMultiple = true,
     defaultValue = "",
@@ -602,6 +615,9 @@ public class JavaOptions extends FragmentOptions {
     JavaOptions host = (JavaOptions) getDefault();
 
     host.javaBase = hostJavaBase;
+    if (useRemoteJdkAsHostJavaBase) {
+      host.javaBase = Label.parseAbsoluteUnchecked("@bazel_tools//tools/jdk:remotejdk");
+    }
     host.jvmOpts = ImmutableList.of("-XX:ErrorFile=/dev/stderr");
 
     host.javacOpts = hostJavacOpts;
