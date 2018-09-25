@@ -337,7 +337,9 @@ alias(
         "//src/conditions:darwin_x86_64": "@remotejdk_macos//:jdk",
         "//src/conditions:windows": "@remotejdk_win//:jdk",
         "//src/conditions:linux_aarch64": "@remotejdk_linux_aarch64//:jdk",
-        "//conditions:default": "@remotejdk_linux//:jdk",
+        "//src/conditions:linux_x86_64": "@remotejdk_linux//:jdk",
+        # Fall back to the local JDK on any other platform.
+        "//conditions:default": "@local_jdk//:jdk",
     }),
     visibility = ["//visibility:public"],
 )
