@@ -614,10 +614,11 @@ public class JavaOptions extends FragmentOptions {
   public FragmentOptions getHost() {
     JavaOptions host = (JavaOptions) getDefault();
 
-    host.javaBase = hostJavaBase;
-    if (useRemoteJdkAsHostJavaBase) {
-      host.javaBase = Label.parseAbsoluteUnchecked("@bazel_tools//tools/jdk:remotejdk");
+    if (useRemoteJdkAsHostJavaBase
+        && "@bazel_tools//tools/jdk:host_jdk".equals(hostJavaBase.toString())) {
+      hostJavaBase = Label.parseAbsoluteUnchecked("@bazel_tools//tools/jdk:remotejdk");
     }
+    host.javaBase = hostJavaBase;
     host.jvmOpts = ImmutableList.of("-XX:ErrorFile=/dev/stderr");
 
     host.javacOpts = hostJavacOpts;

@@ -73,8 +73,14 @@ EOF
   bazel aquery --output=text //java:javalib >& $TEST_log
   expect_log "exec external/embedded_jdk/bin/java"
 
-  bazel aquery --output=text --incompatible_use_remotejdk_as_host_javabase //java:javalib >& $TEST_log
+  bazel aquery --output=text --incompatible_use_remotejdk_as_host_javabase \
+    //java:javalib >& $TEST_log
   expect_log "exec external/remotejdk_linux/bin/java"
+
+  bazel aquery --output=text --host_javabase=//:host_javabase \
+    --incompatible_use_remotejdk_as_host_javabase //java:javalib >& $TEST_log
+  expect_log "exec .*foobar/bin/java"
+  expect_not_log "exec external/remotejdk_linux/bin/java"
 }
 
 function test_javabase() {
@@ -232,6 +238,14 @@ EOF
   expect_log "bar"
   expect_not_log "embedded_jdk"
   expect_log "remotejdk"
+
+  bazel cquery --implicit_deps 'deps(//:with_java)' \
+    --host_javabase=:foo_javabase \
+    --incompatible_use_remotejdk_as_host_javabase >& $TEST_log
+  expect_log "foo"
+  expect_log "bar"
+  expect_not_log "embedded_jdk"
+  expect_not_log "remotejdk"
 }
 
 run_suite "Tests of specifying custom server_javabase/host_javabase and javabase."
