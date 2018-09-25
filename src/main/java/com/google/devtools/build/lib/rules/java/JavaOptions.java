@@ -107,7 +107,7 @@ public class JavaOptions extends FragmentOptions {
 
   @Option(
       name = "host_javabase",
-      defaultValue = "@bazel_tools//tools/jdk:host_jdk",
+      defaultValue = "null",
       converter = LabelConverter.class,
       documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
       effectTags = {OptionEffectTag.UNKNOWN},
@@ -610,15 +610,22 @@ public class JavaOptions extends FragmentOptions {
               + "--java_header_compilation is enabled.")
   public boolean requireJavaToolchainHeaderCompilerDirect;
 
+  private Label getHostJavaBase() {
+    if (hostJavaBase == null) {
+      if (useRemoteJdkAsHostJavaBase) {
+        return Label.parseAbsoluteUnchecked("@bazel_tools//tools/jdk:remotejdk");
+      } else {
+        return Label.parseAbsoluteUnchecked("@bazel_tools//tools/jdk:host_jdk");
+      }
+    }
+    return hostJavaBase;
+  }
+
   @Override
   public FragmentOptions getHost() {
     JavaOptions host = (JavaOptions) getDefault();
 
-    if (useRemoteJdkAsHostJavaBase
-        && "@bazel_tools//tools/jdk:host_jdk".equals(hostJavaBase.toString())) {
-      hostJavaBase = Label.parseAbsoluteUnchecked("@bazel_tools//tools/jdk:remotejdk");
-    }
-    host.javaBase = hostJavaBase;
+    host.javaBase = getHostJavaBase();
     host.jvmOpts = ImmutableList.of("-XX:ErrorFile=/dev/stderr");
 
     host.javacOpts = hostJavacOpts;
@@ -656,7 +663,7 @@ public class JavaOptions extends FragmentOptions {
   @Override
   public Map<String, Set<Label>> getDefaultsLabels() {
     Map<String, Set<Label>> result = new HashMap<>();
-    result.put("JDK", ImmutableSet.of(javaBase, hostJavaBase));
+    result.put("JDK", ImmutableSet.of(javaBase, getHostJavaBase()));
     result.put("JAVA_TOOLCHAIN", ImmutableSet.of(javaToolchain));
 
     return result;
