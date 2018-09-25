@@ -105,7 +105,7 @@ new_http_archive(
         "https://mirror.bazel.build/openjdk/azul-zulu-9.0.7.1-jdk9.0.7/zulu9.0.7.1-jdk9.0.7-macosx_x64-allmodules.tar.gz",
     ],
     build_file = __embedded_dir__ + "/jdk.BUILD",
-    strip_prefix = "zulu9.0.7.1-jdk9.0.7-linux_x64-allmodules",
+    strip_prefix = "zulu9.0.7.1-jdk9.0.7-macosx_x64-allmodules",
 )
 
 new_http_archive(
@@ -115,7 +115,7 @@ new_http_archive(
         "https://mirror.bazel.build/openjdk/azul-zulu-9.0.7.1-jdk9.0.7/zulu9.0.7.1-jdk9.0.7-win_x64-allmodules.zip",
     ],
     build_file = __embedded_dir__ + "/jdk.BUILD",
-    strip_prefix = "zulu9.0.7.1-jdk9.0.7-linux_x64-allmodules",
+    strip_prefix = "zulu9.0.7.1-jdk9.0.7-win_x64-allmodules",
 )
 
 # The source-code for this OpenJDK can be found at:
