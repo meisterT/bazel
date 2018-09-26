@@ -439,7 +439,7 @@ string StartupOptions::GetSystemJavabase() const {
   return blaze::GetSystemJavabase();
 }
 
-string StartupOptions::GetEmbeddedJavabase() {
+string StartupOptions::GetEmbeddedJavabase() const {
   string bundled_jre_path = blaze_util::JoinPath(
       install_base, "_embedded_binaries/embedded_tools/jdk");
   if (blaze_util::CanExecuteFile(blaze_util::JoinPath(
@@ -531,6 +531,9 @@ blaze_exit_code::ExitCode StartupOptions::AddJVMArguments(
     const string &server_javabase, std::vector<string> *result,
     const vector<string> &user_options, string *error) const {
   AddJVMLoggingArguments(result);
+  if (!GetEmbeddedJavabase().empty()) {
+    result->push_back("-Dembedded_jdk=1");
+  }
   return AddJVMMemoryArguments(server_javabase, result, user_options, error);
 }
 
