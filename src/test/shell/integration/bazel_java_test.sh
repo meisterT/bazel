@@ -75,12 +75,12 @@ EOF
 
   bazel aquery --output=text --incompatible_use_remotejdk_as_host_javabase \
     //java:javalib >& $TEST_log
-  expect_log "exec external/remotejdk_linux/bin/java"
+  expect_log "exec external/remotejdk_.*/bin/java"
 
   bazel aquery --output=text --host_javabase=//:host_javabase \
     --incompatible_use_remotejdk_as_host_javabase //java:javalib >& $TEST_log
   expect_log "exec .*foobar/bin/java"
-  expect_not_log "exec external/remotejdk_linux/bin/java"
+  expect_not_log "exec external/remotejdk_.*/bin/java"
 }
 
 function test_javabase() {
