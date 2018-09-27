@@ -612,7 +612,10 @@ public class JavaOptions extends FragmentOptions {
 
   private Label getHostJavaBase() {
     if (hostJavaBase == null) {
-      if (useRemoteJdkAsHostJavaBase && "1".equals(System.getProperty("embedded_jdk"))) {
+      if (useRemoteJdkAsHostJavaBase
+          // If there's no embedded JDK, we did use the local JDK as host JDK in the past.
+          // In order to make this flag flip as soft as possible, we will continue to do so.
+          && "1".equals(System.getProperty("embedded_jdk"))) {
         return Label.parseAbsoluteUnchecked("@bazel_tools//tools/jdk:remotejdk");
       } else {
         return Label.parseAbsoluteUnchecked("@bazel_tools//tools/jdk:host_jdk");
