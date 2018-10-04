@@ -117,19 +117,6 @@ public class JavaOptions extends FragmentOptions {
   public Label hostJavaBase;
 
   @Option(
-      name = "incompatible_use_remotejdk_as_host_javabase",
-      defaultValue = "false",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      metadataTags = {
-        OptionMetadataTag.INCOMPATIBLE_CHANGE,
-        OptionMetadataTag.TRIGGERED_BY_ALL_INCOMPATIBLE_CHANGES
-      },
-      help =
-      "If enabled, uses a JDK downloaded from a remote repository instead of the embedded JDK.")
-  public boolean useRemoteJdkAsHostJavaBase;
-
-  @Option(
     name = "javacopt",
     allowMultiple = true,
     defaultValue = "",
@@ -612,11 +599,10 @@ public class JavaOptions extends FragmentOptions {
 
   private Label getHostJavaBase() {
     if (hostJavaBase == null) {
-      if (useRemoteJdkAsHostJavaBase
-          // If there's no embedded JDK, we did use the local JDK as host JDK in the past.
-          // In order to make this flag flip as soft as possible, we will continue to do so.
-          && "1".equals(System.getProperty("embedded_jdk"))) {
-        return Label.parseAbsoluteUnchecked("@bazel_tools//tools/jdk:remotejdk");
+      if (!"1".equals(System.getProperty("embedded_jdk"))) {
+        // If this is a no JDK build and the user didn't override the javabase, fall back to the
+        // local JDK.
+        return Label.parseAbsoluteUnchecked("@local_jdk//:jdk");
       } else {
         return Label.parseAbsoluteUnchecked("@bazel_tools//tools/jdk:host_jdk");
       }

@@ -68,19 +68,9 @@ EOF
   bazel aquery --output=text --host_javabase=//:host_javabase //java:javalib >& $TEST_log
   expect_log "exec .*foobar/bin/java"
 
-  # If we don't specify anything, we expect the embedded JDK to be used.
-  # Note that this will change in the future but is the current state.
+  # If we don't specify anything, we expect a remote JDK to be used.
   bazel aquery --output=text //java:javalib >& $TEST_log
-  expect_log "exec external/embedded_jdk/bin/java"
-
-  bazel aquery --output=text --incompatible_use_remotejdk_as_host_javabase \
-    //java:javalib >& $TEST_log
   expect_log "exec external/remotejdk_.*/bin/java"
-
-  bazel aquery --output=text --host_javabase=//:host_javabase \
-    --incompatible_use_remotejdk_as_host_javabase //java:javalib >& $TEST_log
-  expect_log "exec .*foobar/bin/java"
-  expect_not_log "exec external/remotejdk_.*/bin/java"
 }
 
 function test_javabase() {
@@ -223,25 +213,10 @@ EOF
   bazel cquery --implicit_deps 'deps(//:with_java)' >& $TEST_log
   expect_not_log "foo"
   expect_log "bar"
-  expect_log "embedded_jdk"
-  expect_not_log "remotejdk"
-
-  bazel cquery --implicit_deps 'deps(//:with_java)' --host_javabase=:foo_javabase >& $TEST_log
-  expect_log "foo"
-  expect_log "bar"
-  expect_not_log "embedded_jdk"
-  expect_not_log "remotejdk"
-
-  bazel cquery --implicit_deps 'deps(//:with_java)' \
-    --incompatible_use_remotejdk_as_host_javabase >& $TEST_log
-  expect_not_log "foo"
-  expect_log "bar"
   expect_not_log "embedded_jdk"
   expect_log "remotejdk"
 
-  bazel cquery --implicit_deps 'deps(//:with_java)' \
-    --host_javabase=:foo_javabase \
-    --incompatible_use_remotejdk_as_host_javabase >& $TEST_log
+  bazel cquery --implicit_deps 'deps(//:with_java)' --host_javabase=:foo_javabase >& $TEST_log
   expect_log "foo"
   expect_log "bar"
   expect_not_log "embedded_jdk"

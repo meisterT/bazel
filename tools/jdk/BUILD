@@ -191,7 +191,7 @@ alias(
 
 alias(
     name = "host_jdk",
-    actual = "@embedded_jdk//:jdk",
+    actual = ":remotejdk",
 )
 
 RELEASES = (8, 9)
