@@ -1,0 +1,17 @@
+# This is a dummy BUILD file to be used by hg_repository's build_file attribute.
+# It will be placed in the external repository fetched by hg_repository.
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "from_build_file_attr",
+    srcs = glob(["**/*"]), # Grab all files from the repo
+    # In a real scenario, you'd list specific files or use more precise globs.
+)
+
+# A specific target to check for.
+genrule(
+    name = "hello_world_from_build_file",
+    outs = ["hello.txt"],
+    cmd = "echo 'Hello from build_file_attr' > $@",
+)

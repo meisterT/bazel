@@ -1,90 +1,30 @@
-load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
-load("@io_bazel_skydoc//stardoc:html_tables_stardoc.bzl", "html_tables_stardoc")
-load("@rules_pkg//:pkg.bzl", "pkg_tar")
+load("@bazel_skylib//lib:bzl_library.bzl", "bzl_library")
 
-licenses(["notice"])  # Apache 2.0
+package(default_visibility = ["//visibility:public"])
 
-exports_files(glob(["*.bzl"]))
-
-filegroup(
-    name = "srcs",
-    srcs = glob(["**"]),
-    visibility = ["//tools/build_defs:__pkg__"],
-)
-
-filegroup(
-    name = "mock_srcs",
+bzl_library(
+    name = "hg_lib",
     srcs = [
-        "cache.bzl",
-        "http.bzl",
-        "local.bzl",
-        "utils.bzl",
+        "hg.bzl",
+        "hg_worker.bzl",
     ],
-    visibility = ["//src/test/py/bazel:__pkg__"],
-)
-
-filegroup(
-    name = "embedded_tools",
-    srcs = glob(["*.bzl"]) + ["BUILD.repo"],
-    visibility = ["//tools/build_defs:__pkg__"],
+    deps = [
+        ":utils_lib", # Local reference to utils_lib
+        "@bazel_tools//tools/build_defs/repo:http.bzl", # For repository_rule, Label, etc.
+        "@bazel_skylib//lib:paths",
+        "@bazel_skylib//lib:types",
+    ],
 )
 
 bzl_library(
-    name = "lib",
-    srcs = glob(["*.bzl"]),
-)
-
-genrule(
-    name = "empty",
-    outs = ["empty.bzl"],
-    cmd = "touch $@",
-)
-
-# This seemingly useless rule is needed to work around some Google-internal linter issues.
-genrule(
-    name = "index_md",
-    srcs = [":index.md.tmpl"],
-    outs = ["index.md"],
-    cmd = "cat $< > $@",
-)
-
-REPO_BZL_FILES = [
-    "cache",
-    "git",
-    "http",
-    "local",
-    "utils",
-]
-
-[html_tables_stardoc(
-    name = "%s_raw_md" % (name,),
-    out = "%s_raw.md" % (name,),
-    input = "%s.bzl" % (name,),
-    deps = [":lib"],
-) for name in REPO_BZL_FILES]
-
-[genrule(
-    name = "preamb_%s_md" % (name,),
-    srcs = [":preamb.md.tmpl"],
-    outs = ["preamb_%s.md" % (name,)],
-    cmd = "sed 's/BZL_FILE_BASE_NAME/%s/g' < $< > $@" % (name,),
-) for name in REPO_BZL_FILES]
-
-[genrule(
-    name = "%s_md" % (name,),
+    name = "utils_lib",
     srcs = [
-        ":preamb_%s.md" % (name,),
-        ":%s_raw_md" % (name,),
+        "utils/utils.bzl",
+        "utils/patch.bzl", # Assuming patch.bzl is also in the utils directory
     ],
-    outs = ["%s.md" % (name,)],
-    cmd = "cat $(SRCS) > $@",
-) for name in REPO_BZL_FILES]
-
-pkg_tar(
-    name = "doc",
-    srcs = ["%s_md" % (name,) for name in REPO_BZL_FILES] + ["index.md"],
-    strip_prefix = "/tools/build_defs/repo",
-    visibility = [
-        "//src/main/java/com/google/devtools/build/lib:__pkg__",
+    visibility = ["//visibility:public"], # Make sure this is visible to hg_lib and tests
+    deps = [
+        "@bazel_skylib//lib:paths",
+        "@bazel_skylib//lib:shell",
     ],
 )

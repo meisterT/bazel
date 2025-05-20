@@ -131,6 +131,109 @@ are re-fetched:
 *   If the `local` flag is set, in addition to the above cases, the repo is also
     re-fetched when the Bazel server restarts.
 
+## `hg_repository` Rule
+
+The `hg_repository` rule fetches an external repository by cloning it from a
+Mercurial (hg) version control system.
+
+It allows Bazel to depend on source code managed in Mercurial. The rule clones
+the repository from a specified remote URI, checks out a particular revision,
+tag, or branch, and makes the contents available for Bazel builds. It also
+supports applying patches and customizing the `BUILD` and `WORKSPACE` files
+for the fetched repository.
+
+**Prerequisites:**
+
+Mercurial (`hg`) must be installed on the system where Bazel is executed. The `hg`
+executable should be available in the system's `PATH`. Alternatively, the path
+to the `hg` executable can be specified via the `_hg_tool` attribute (typically
+configured globally via a toolchain or by overriding the default Label, e.g.,
+`@bazel_tools//tools/mercurial:hg`).
+
+**Reproducibility:**
+
+For hermeticity and reproducibility, if a `tag` or `branch` is specified,
+`hg_repository` resolves it to a specific changeset ID during the initial fetch.
+This resolved changeset ID is then stored. Subsequent fetches (e.g., on a clean
+build or when the repository cache is cleared) will use this exact changeset ID,
+ensuring that the build uses the same source code version over time. If the
+`revision` attribute (a specific changeset ID) is provided, it is used directly,
+guaranteeing reproducibility from the outset.
+
+**Attributes:**
+
+| Attribute                | Description                                                                                                | Type        | Mandatory | Default                                                |
+| :----------------------- | :--------------------------------------------------------------------------------------------------------- | :---------- | :-------- | :----------------------------------------------------- |
+| `name`                   | A unique name for this repository.                                                                         | String      | Yes       |                                                        |
+| `remote`                 | The URI of the remote Mercurial repository.                                                                | String      | Yes       |                                                        |
+| `revision`               | Specific revision (changeset ID) to check out. Takes precedence over `tag` or `branch` for reproducibility.  | String      | No        | `""`                                                   |
+| `tag`                    | Tag to check out. Used if `revision` is not set.                                                           | String      | No        | `""`                                                   |
+| `branch`                 | Branch to check out. Used if `revision` and `tag` are not set.                                             | String      | No        | `""`                                                   |
+| `patches`                | A list of Label references to patch files to apply after checkout.                                         | List of Labels | No        | `[]`                                                   |
+| `patch_tool`             | Path to the patch utility (e.g., `patch`). Defaults to the system's patch tool found in the PATH.          | String      | No        | `""`                                                   |
+| `patch_args`             | List of arguments for the patch tool.                                                                      | List of Strings | No        | `[]`                                                   |
+| `patch_strip`            | Number of leading path segments to strip from paths in patches (equivalent to `patch -p<N>`).                | Integer     | No        | `0`                                                    |
+| `patch_cmds`             | Bash commands (on Linux/macOS) to run after patches are applied.                                           | List of Strings | No        | `[]`                                                   |
+| `patch_cmds_win`         | PowerShell commands (on Windows) to run after patches are applied.                                         | List of Strings | No        | `[]`                                                   |
+| `build_file`             | Label of a file to use as the `BUILD` file for this repository. Overrides `build_file_content`.            | Label       | No        | `None`                                                 |
+| `build_file_content`     | Content for the `BUILD` file for this repository if `build_file` is not specified.                         | String      | No        | `""`                                                   |
+| `workspace_file`         | Label of a file to use as the `WORKSPACE` file for this repository. Overrides `workspace_file_content`.    | Label       | No        | `None`                                                 |
+| `workspace_file_content` | Content for the `WORKSPACE` file for this repository if `workspace_file` is not specified.                 | String      | No        | `""`                                                   |
+| `strip_prefix`           | A directory prefix to strip from the extracted files.                                                      | String      | No        | `""`                                                   |
+| `verbose`                | If true, enables verbose output during hg operations.                                                      | Boolean     | No        | `False`                                                |
+| `_hg_tool`               | Path to the Mercurial (hg) executable.                                                                     | Label       | No        | `@bazel_tools//tools/mercurial:hg` (or system default) |
+
+**Basic Usage Examples:**
+
+*Cloning a repository using a tag:*
+
+```starlark
+load("@your_rules_alias//:hg.bzl", "hg_repository") # Adjust load path as needed
+
+hg_repository(
+    name = "mercurial_hello_tagged",
+    remote = "https://www.mercurial-scm.org/repo/hello",
+    tag = "0.1",
+    build_file_content = """
+package(default_visibility = ["//visibility:public"])
+filegroup(
+    name = "hello_srcs",
+    srcs = glob(["*.c", "README"]),
+)
+""",
+)
+```
+
+*Cloning a repository using a specific revision (changeset ID):*
+
+```starlark
+hg_repository(
+    name = "mercurial_hello_specific_rev",
+    remote = "https://www.mercurial-scm.org/repo/hello",
+    revision = "03eff24f1f01b038a0f43ba2586827f89cee4a41", # Corresponds to tag 0.1
+)
+```
+
+*Applying a patch:*
+
+```starlark
+# Assuming you have a patch file my_fix.patch in your workspace:
+# //patches:my_fix.patch
+
+hg_repository(
+    name = "mercurial_hello_patched",
+    remote = "https://www.mercurial-scm.org/repo/hello",
+    tag = "0.1",
+    patches = ["//patches:my_fix.patch"],
+    patch_strip = 1,
+)
+```
+
+**Current Limitations:**
+
+*   Submodule/subrepository support is not yet implemented.
+*   The `strip_prefix` attribute's implementation might have limitations with symlinks or complex directory structures.
+
 ## Forcing refetch of external repos
 
 Sometimes, an external repo can become outdated without any change to its
