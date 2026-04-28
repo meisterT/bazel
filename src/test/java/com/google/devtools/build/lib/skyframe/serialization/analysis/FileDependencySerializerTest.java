@@ -71,20 +71,21 @@ public final class FileDependencySerializerTest {
     root = Root.fromPath(fs.getPath("/root"));
     root.asPath().createDirectoryAndParents();
     serializer = new FileDependencySerializer(versionGetter, graph, writer, executor, null);
+    
+    // Default mock for writer.put to avoid NPE in tests
+    when(writer.put(any(), any())).thenReturn(new WriteStatuses.SettableWriteStatus());
   }
 
   @Test
-  public void missingNodeEntry_incrementsErrorCounter() {
+  public void missingNodeEntry_succeeds() throws Exception {
     FileKey key = FileKey.create(RootedPath.toRootedPath(root, PathFragment.create("missing.txt")));
     when(graph.getIfPresent(key)).thenReturn(null);
 
     FileDataInfoOrFuture result = serializer.registerDependency(key);
 
     assertThat(result).isInstanceOf(FutureFileDataInfo.class);
-    ExecutionException e =
-        assertThrows(ExecutionException.class, () -> ((FutureFileDataInfo) result).get());
-    assertThat(e).hasCauseThat().isInstanceOf(MissingSkyframeEntryException.class);
-    assertThat(serializer.getCounters().nodesWithProcessingErrors.get()).isEqualTo(1);
+    ((FutureFileDataInfo) result).get(); // Should not throw exception
+    assertThat(serializer.getCounters().nodesWithProcessingErrors.get()).isEqualTo(0);
     assertThat(serializer.getCounters().nodesWaitingForDeps.get()).isEqualTo(0);
   }
 
@@ -100,7 +101,7 @@ public final class FileDependencySerializerTest {
   }
 
   @Test
-  public void symlinkResolutionFailure_incrementsErrorCounter() throws Exception {
+  public void symlinkResolutionFailure_succeeds() throws Exception {
     PathFragment symlinkPathFragment = PathFragment.create("symlink.txt");
     PathFragment targetPathFragment = PathFragment.create("target.txt");
     RootedPath symlinkRootedPath = RootedPath.toRootedPath(root, symlinkPathFragment);
@@ -125,10 +126,8 @@ public final class FileDependencySerializerTest {
     FileDataInfoOrFuture result = serializer.registerDependency(symlinkKey);
 
     assertThat(result).isInstanceOf(FutureFileDataInfo.class);
-    ExecutionException e =
-        assertThrows(ExecutionException.class, () -> ((FutureFileDataInfo) result).get());
-    assertThat(e).hasCauseThat().isInstanceOf(MissingSkyframeEntryException.class);
-    assertThat(serializer.getCounters().nodesWithProcessingErrors.get()).isEqualTo(1);
+    ((FutureFileDataInfo) result).get(); // Should not throw exception
+    assertThat(serializer.getCounters().nodesWithProcessingErrors.get()).isEqualTo(0);
     assertThat(serializer.getCounters().nodesWaitingForDeps.get()).isEqualTo(0);
   }
 

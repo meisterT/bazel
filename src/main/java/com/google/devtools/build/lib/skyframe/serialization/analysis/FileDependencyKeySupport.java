@@ -18,7 +18,7 @@ import static com.google.common.base.Preconditions.checkArgument;
 import com.google.devtools.build.lib.skyframe.serialization.proto.FileInvalidationData;
 import com.google.devtools.build.lib.unsafe.StringUnsafe;
 import com.google.devtools.build.lib.versioning.LongVersionGetter;
-import com.google.devtools.build.lib.vfs.PathFragment;
+
 import java.math.BigInteger;
 import java.util.Arrays;
 import java.util.Base64;
@@ -48,10 +48,6 @@ final class FileDependencyKeySupport {
     }
     // Uses a BigInteger to trim leading 0 bytes.
     return ENCODER.encode(BigInteger.valueOf(mtsv).toByteArray());
-  }
-
-  static String computeCacheKey(PathFragment path, long mtsv, byte delimiter) {
-    return computeCacheKey(path.getPathString(), mtsv, delimiter);
   }
 
   static String computeCacheKey(String path, long mtsv, byte delimiter) {

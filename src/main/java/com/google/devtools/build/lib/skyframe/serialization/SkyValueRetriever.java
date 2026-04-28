@@ -169,6 +169,15 @@ public final class SkyValueRetriever {
   /** The value was successfully retrieved. */
   public record RetrievedValue(SkyValue value) implements SerializationState, RetrievalResult {}
 
+  private static java.util.Set<String> extractPathsFromKey(String entryStr) {
+    java.util.Set<String> paths = new java.util.HashSet<>();
+    String[] parts = entryStr.split("[:;]");
+    for (int i = 1; i < parts.length; i++) {
+      paths.add(parts[i]);
+    }
+    return paths;
+  }
+
   /**
    * Attempts to retrieve the value associated with {@code key} from {@code
    * fingerprintValueService}.
@@ -189,7 +198,9 @@ public final class SkyValueRetriever {
       @Nullable RemoteAnalysisCacheClient analysisCacheClient,
       SkyKey key,
       RetrievalContext retrievalContext,
-      FrontierNodeVersion frontierNodeVersion)
+      FrontierNodeVersion frontierNodeVersion,
+      @Nullable java.util.function.Function<PackedFingerprint, ListenableFuture<Boolean>> invalidationCheck,
+      @Nullable String workspaceRoot)
       throws InterruptedException, SerializationException {
     SerializationState serializationState = retrievalContext.getState();
     try {
@@ -255,12 +266,39 @@ public final class SkyValueRetriever {
                   // fall through
                   case DATA_TYPE_LISTING:
                     {
-                      var unusedKey = codedIn.readString();
+                      String depKey = codedIn.readString();
+                      // Perform validation
+                      String baseCommit = GitDiffHelper.detectBaseCommit(workspaceRoot);
+                      if (baseCommit != null) {
+                        java.util.Set<String> modifiedFiles = GitDiffHelper.getModifiedFiles(workspaceRoot, baseCommit);
+                        java.util.Set<String> depPaths = extractPathsFromKey(depKey);
+                        if (InvalidationValidator.shouldInvalidate(modifiedFiles, depPaths)) {
+                          serializationState = new NoCachedData(MissReason.MISS_REASON_SKYVALUE_MISS);
+                          return (RetrievalResult) serializationState;
+                        }
+                      }
                       break;
                     }
                   case DATA_TYPE_ANALYSIS_NODE, DATA_TYPE_EXECUTION_NODE:
                     {
-                      var unusedKey = PackedFingerprint.readFrom(codedIn);
+                      var depKey = PackedFingerprint.readFrom(codedIn);
+                      if (invalidationCheck != null) {
+                        ListenableFuture<Boolean> invalidFuture = invalidationCheck.apply(depKey);
+                        switch (futuresShim.dependOnFuture(invalidFuture)) {
+                          case DONE:
+                            try {
+                              if (getDone(invalidFuture)) {
+                                serializationState = new NoCachedData(MissReason.MISS_REASON_SKYVALUE_MISS);
+                                return (RetrievalResult) serializationState;
+                              }
+                            } catch (ExecutionException e) {
+                              throw new SerializationException("Failed to check invalidation for " + key, e);
+                            }
+                            break;
+                          case NOT_DONE:
+                            return Restart.RESTART;
+                        }
+                      }
                       break;
                     }
                   default:

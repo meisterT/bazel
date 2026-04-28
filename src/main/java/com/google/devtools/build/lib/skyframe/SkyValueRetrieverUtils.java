@@ -80,7 +80,9 @@ public final class SkyValueRetrieverUtils {
               analysisCachingDeps.getAnalysisCacheClient(),
               key,
               state,
-              /* frontierNodeVersion= */ analysisCachingDeps.getSkyValueVersion());
+              analysisCachingDeps.getSkyValueVersion(),
+              analysisCachingDeps.getClientInvalidator() != null ? analysisCachingDeps.getClientInvalidator()::isInvalidAsync : null,
+              analysisCachingDeps.getWorkspaceRoot());
       analysisCachingDeps.recordRetrievalResult(retrievalResult, key);
     } catch (SerializationException e) {
       // TODO: b/445242928 - also log this in BEP

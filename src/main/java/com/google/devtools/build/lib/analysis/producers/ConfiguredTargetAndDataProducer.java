@@ -121,9 +121,12 @@ public final class ConfiguredTargetAndDataProducer
   private void acceptValue(ConfiguredTargetValue configuredTargetValue) {
     this.configuredTargetValue = configuredTargetValue;
     if (transitiveState.storeTransitivePackages()) {
-      transitiveState.updateTransitivePackages(
-          ConfiguredTargetKey.fromConfiguredTarget(configuredTargetValue.getConfiguredTarget()),
-          configuredTargetValue.getTransitivePackages());
+      var transitivePackages = configuredTargetValue.getTransitivePackages();
+      if (transitivePackages != null) {
+        transitiveState.updateTransitivePackages(
+            ConfiguredTargetKey.fromConfiguredTarget(configuredTargetValue.getConfiguredTarget()),
+            transitivePackages);
+      }
     }
   }
 

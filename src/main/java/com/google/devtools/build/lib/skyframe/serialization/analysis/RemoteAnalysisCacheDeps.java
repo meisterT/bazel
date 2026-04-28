@@ -14,6 +14,8 @@
 
 package com.google.devtools.build.lib.skyframe.serialization.analysis;
 
+import com.google.devtools.build.lib.skyframe.serialization.GitDiffHelper;
+
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 import com.google.common.base.Preconditions;
@@ -61,6 +63,7 @@ public class RemoteAnalysisCacheDeps
   private final RemoteAnalysisCachingEventListener listener;
   private final FrontierNodeVersion frontierNodeVersion;
   private final boolean skycacheAnalysisOnly;
+  private final com.google.devtools.build.lib.vfs.Path workspaceRoot;
 
   private final ListenableFuture<ObjectCodecs> objectCodecs;
   private final ListenableFuture<FingerprintValueService> fingerprintValueServiceFuture;
@@ -69,6 +72,8 @@ public class RemoteAnalysisCacheDeps
 
   private final AtomicBoolean bailedOut = new AtomicBoolean();
   private final ExtendedEventHandler eventHandler;
+  
+  private ClientInvalidator clientInvalidator;
 
   public static RemoteAnalysisCacheDeps createDisabled() {
     return new RemoteAnalysisCacheDeps();
@@ -85,7 +90,8 @@ public class RemoteAnalysisCacheDeps
       FrontierNodeVersion frontierNodeVersion,
       Optional<Predicate<PackageIdentifier>> activeDirectoriesMatcher,
       String serializedFrontierProfile,
-      boolean skycacheAnalysisOnly) {
+      boolean skycacheAnalysisOnly,
+      com.google.devtools.build.lib.vfs.Path workspaceRoot) {
     this.mode = mode;
     this.bailOutOnMissingFingerprint = bailOutOnMissingFingerprint;
     this.skycacheAnalysisOnly = skycacheAnalysisOnly;
@@ -93,6 +99,7 @@ public class RemoteAnalysisCacheDeps
     this.serializedFrontierProfile = serializedFrontierProfile;
     this.activeDirectoriesMatcher = activeDirectoriesMatcher;
     this.eventHandler = eventHandler;
+    this.workspaceRoot = workspaceRoot;
 
     this.objectCodecs = objectCodecs;
     this.listener = listener;
@@ -118,6 +125,7 @@ public class RemoteAnalysisCacheDeps
     this.fingerprintValueServiceFuture = null;
     this.metadataWriter = null;
     this.analysisCacheClient = null;
+    this.workspaceRoot = null;
   }
 
   static <T> T resolveWithTimeout(Future<? extends T> future, String what)
@@ -204,6 +212,39 @@ public class RemoteAnalysisCacheDeps
   }
 
   @Override
+  public ClientInvalidator getClientInvalidator() throws InterruptedException {
+    checkEnabled();
+    if (clientInvalidator == null) {
+      FingerprintValueService fvs = getFingerprintValueService();
+      if (fvs != null) {
+        String baseCommit = null;
+        try {
+          baseCommit = GitDiffHelper.detectBaseCommit(getWorkspaceRoot());
+        } catch (java.io.IOException e) {
+          eventHandler.handle(Event.warn("Skycache: Failed to detect base commit: " + e.getMessage()));
+        }
+        if (baseCommit != null) {
+          try {
+            java.util.Set<String> modifiedFiles;
+            String testModifiedFiles = System.getProperty("bazel.skycache.test.modified_files");
+            if (testModifiedFiles != null) {
+              modifiedFiles = testModifiedFiles.isEmpty()
+                  ? com.google.common.collect.ImmutableSet.of()
+                  : com.google.common.collect.ImmutableSet.copyOf(testModifiedFiles.split(","));
+            } else {
+              modifiedFiles = GitDiffHelper.getModifiedFiles(getWorkspaceRoot(), baseCommit);
+            }
+            clientInvalidator = new ClientInvalidator(fvs, modifiedFiles, getWorkspaceRoot());
+          } catch (java.io.IOException e) {
+            eventHandler.handle(Event.warn("Skycache: Failed to get modified files: " + e.getMessage()));
+          }
+        }
+      }
+    }
+    return clientInvalidator;
+  }
+
+  @Override
   public void recordRetrievalResult(RetrievalResult retrievalResult, SkyKey key) {
     checkEnabled();
     listener.recordRetrievalResult(retrievalResult, key);
@@ -250,5 +291,11 @@ public class RemoteAnalysisCacheDeps
   public boolean getSkycacheAnalysisOnly() {
     checkEnabled();
     return skycacheAnalysisOnly;
+  }
+
+  @Override
+  @Nullable
+  public String getWorkspaceRoot() {
+    return workspaceRoot != null ? workspaceRoot.getPathString() : null;
   }
 }

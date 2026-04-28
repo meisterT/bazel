@@ -242,6 +242,14 @@ public final class FingerprintValueService implements KeyValueWriter {
     return store;
   }
 
+  public FingerprintValueStore getFingerprintValueStore() {
+    return store;
+  }
+
+  public Fingerprinter getFingerprinter() {
+    return fingerprinter;
+  }
+
   @VisibleForTesting
   public PackedFingerprint getCachedFingerprintForTesting(Object object) {
     return (PackedFingerprint) cache.getSerializationCache().getIfPresent(object);

@@ -78,11 +78,12 @@ public abstract class SkycacheIntegrationTestBase extends BuildIntegrationTestCa
   private final ClearCountingSyscallCache syscallCache = new ClearCountingSyscallCache();
 
   @Before
-  public void setup() {
+  public void setup() throws Exception {
     // TODO: b/367284400 - replace this with a barebones diffawareness check that works in Bazel
     // integration tests (e.g. making LocalDiffAwareness supported and not return
     // EVERYTHING_MODIFIED) for baseline diffs.
     addOptions("--experimental_frontier_violation_check=disabled_for_testing");
+    getSkyframeExecutor().resetEvaluator();
   }
 
   protected void addDownloadOptions() {

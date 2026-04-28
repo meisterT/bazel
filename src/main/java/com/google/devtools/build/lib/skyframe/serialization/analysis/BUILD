@@ -39,6 +39,7 @@ java_library(
         ":remote_analysis_cache_client",
         ":remote_analysis_caching_server_state",
         ":remote_analysis_metadata_writer",
+        ":versioned_changes_validator",
         "//src/main/java/com/google/devtools/build/lib/cmdline",
         "//src/main/java/com/google/devtools/build/lib/skyframe/serialization",
         "//src/main/java/com/google/devtools/build/lib/skyframe/serialization:frontier_node_version",
@@ -192,6 +193,7 @@ java_library(
     name = "versioned_changes_validator",
     srcs = [
         "AlwaysMatch.java",
+        "ClientInvalidator.java",
         "FileOpMatchMemoizingLookup.java",
         "FileOpMatchResultTypes.java",
         "MatchIndicator.java",
@@ -206,6 +208,7 @@ java_library(
         ":versioned_changes",
         "//src/main/java/com/google/devtools/build/lib/concurrent",
         "//src/main/java/com/google/devtools/build/lib/concurrent:settable_future_keyed_value",
+        "//src/main/java/com/google/devtools/build/lib/skyframe/serialization",
         "//third_party:guava",
     ],
 )
@@ -216,7 +219,6 @@ java_library(
     deps = [
         "//src/main/java/com/google/devtools/build/lib/unsafe:string",
         "//src/main/java/com/google/devtools/build/lib/versioning:long_version_getter",
-        "//src/main/java/com/google/devtools/build/lib/vfs:pathfragment",
         "//src/main/protobuf:file_invalidation_data_java_proto",
         "//third_party:guava",
     ],
@@ -232,12 +234,38 @@ java_library(
 
 java_library(
     name = "options",
-    srcs = ["RemoteAnalysisCachingOptions.java"],
+    srcs = [
+        "RemoteAnalysisCachingOptions.java",
+        "SkycacheKeyResolver.java",
+        "SkycacheOptions.java",
+    ],
     deps = [
         ":remote_analysis_cache_storage_type",
+        "//src/main/java/com/google/devtools/build/lib/vfs",
         "//src/main/java/com/google/devtools/common/options",
+        "//third_party:flogger",
         "//third_party:guava",
         "//third_party:jsr305",
+    ],
+)
+
+java_library(
+    name = "local_skycache_storage",
+    srcs = ["LocalSkycacheStorage.java"],
+    deps = [
+        "//src/main/java/com/google/devtools/build/lib/vfs",
+        "//third_party:guava",
+    ],
+)
+
+java_library(
+    name = "disk_fingerprint_value_store",
+    srcs = ["DiskFingerprintValueStore.java"],
+    deps = [
+        ":local_skycache_storage",
+        "//src/main/java/com/google/devtools/build/lib/skyframe/serialization",
+        "//src/main/java/com/google/devtools/build/lib/skyframe/serialization:write_statuses",
+        "//third_party:guava",
     ],
 )
 
@@ -311,8 +339,10 @@ java_library(
         ":options",
         ":remote_analysis_cache_client",
         ":remote_analysis_metadata_writer",
+        "//src/main/java/com/google/devtools/build/lib/analysis:blaze_directories",
         "//src/main/java/com/google/devtools/build/lib/skyframe/serialization",
         "//src/main/java/com/google/devtools/build/lib/util:abrupt_exit_exception",
+        "//src/main/java/com/google/devtools/common/options",
         "//third_party:guava",
         "//third_party:jsr305",
     ],
@@ -375,7 +405,9 @@ java_library(
 
 java_library(
     name = "remote_analysis_cache_manager",
-    srcs = ["RemoteAnalysisCacheManager.java"],
+    srcs = [
+        "RemoteAnalysisCacheManager.java",
+    ],
     deps = [
         ":analysis_cache_invalidator",
         ":dependencies_provider",
@@ -385,12 +417,16 @@ java_library(
         ":remote_analysis_cache_client",
         ":remote_analysis_cache_deps",
         ":remote_analysis_caching_server_state",
+        ":versioned_changes_validator",
         "//src/main/java/com/google/devtools/build/lib/cmdline",
         "//src/main/java/com/google/devtools/build/lib/events",
         "//src/main/java/com/google/devtools/build/lib/skyframe/serialization",
+        "//src/main/java/com/google/devtools/build/lib/vfs",
         "//src/main/java/com/google/devtools/build/skyframe",
         "//src/main/java/com/google/devtools/build/skyframe:skyframe-objects",
+        "//src/main/protobuf:file_invalidation_data_java_proto",
         "//third_party:guava",
+        "@com_google_protobuf//java/core:lite_runtime_only",
     ],
 )
 
@@ -421,6 +457,7 @@ java_library(
         "//src/main/java/com/google/devtools/build/lib/packages/semantics",
         "//src/main/java/com/google/devtools/build/lib/pkgcache:package_path_codec_dependencies",
         "//src/main/java/com/google/devtools/build/lib/profiler",
+        "//src/main/java/com/google/devtools/build/lib/remote/options",
         "//src/main/java/com/google/devtools/build/lib/runtime:blaze_command_cluster",
         "//src/main/java/com/google/devtools/build/lib/skyframe:prerequisite_package_function",
         "//src/main/java/com/google/devtools/build/lib/skyframe:skyfocus_options",
@@ -448,11 +485,13 @@ java_library(
         ":remote_analysis_cache_client",
         ":remote_analysis_caching_services_supplier",
         ":remote_analysis_metadata_writer",
+        ":versioned_changes_validator",
         "//src/main/java/com/google/devtools/build/lib/cmdline",
         "//src/main/java/com/google/devtools/build/lib/events",
         "//src/main/java/com/google/devtools/build/lib/profiler",
         "//src/main/java/com/google/devtools/build/lib/skyframe/serialization",
         "//src/main/java/com/google/devtools/build/lib/skyframe/serialization:frontier_node_version",
+        "//src/main/java/com/google/devtools/build/lib/vfs",
         "//src/main/java/com/google/devtools/build/skyframe:skyframe-objects",
         "//third_party:flogger",
         "//third_party:guava",

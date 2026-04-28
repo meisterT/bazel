@@ -151,9 +151,12 @@ final class FileDependencyDeserializer {
               FutureNestedDependencies.class,
               FileDependencyDeserializer.this::populateFutureNestedDependencies);
 
-  FileDependencyDeserializer(Executor executor, Fingerprinter fingerprinter) {
+  private final String workspaceRoot;
+
+  FileDependencyDeserializer(Executor executor, Fingerprinter fingerprinter, @Nullable String workspaceRoot) {
     this.executor = executor;
     this.fingerprinter = fingerprinter;
+    this.workspaceRoot = workspaceRoot;
   }
 
   sealed interface FileDependenciesOrFuture permits FileDependencies, FutureFileDependencies {}
@@ -183,6 +186,11 @@ final class FileDependencyDeserializer {
    *     ListenableFuture<FileDependencies>} instance.
    */
   FileDependenciesOrFuture getFileDependencies(String key, FingerprintValueStore store) {
+    int pathBegin = key.indexOf(FILE_KEY_DELIMITER) + 1;
+    String filepath = key.substring(pathBegin);
+    if (filepath.startsWith("/") && (workspaceRoot == null || !filepath.startsWith(workspaceRoot))) {
+      return ROOT_FILE;
+    }
     return fileCache.getValueOrFuture(key, store);
   }
 
@@ -218,6 +226,11 @@ final class FileDependencyDeserializer {
    *     ListenableFuture<ListingDependencies>} instance.
    */
   ListingDependenciesOrFuture getListingDependencies(String key, FingerprintValueStore store) {
+    int pathBegin = key.indexOf(DIRECTORY_KEY_DELIMITER) + 1;
+    String filepath = key.substring(pathBegin);
+    if (filepath.startsWith("/") && (workspaceRoot == null || !filepath.startsWith(workspaceRoot))) {
+      return ListingDependencies.from(ROOT_FILE);
+    }
     return listingCache.getValueOrFuture(key, store);
   }
 

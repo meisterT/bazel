@@ -366,6 +366,7 @@ public class BuildTool {
       if (request.needsInstrumentationFilter()) {
         applyHeuristicInstrumentationFilter(buildOptions, targetPatternPhaseValue);
       }
+
       var analysisDeps =
           RemoteAnalysisCacheFactory.create(
               env,
@@ -1298,12 +1299,14 @@ public class BuildTool {
           FrontierSerializer.serializeAndUploadFrontier(
               serializationDependenciesProvider,
               env.getSkyframeExecutor().getEvaluator(),
-              env.getVersionGetter(),
+              env.getVersionGetter() != null ? env.getVersionGetter() : new DummyVersionGetter(),
               env.getReporter(),
               env.getEventBus(),
               env.getOptions()
                   .getOptions(KeepStateAfterBuildOption.class)
-                  .getKeepStateAfterBuild());
+                  .getKeepStateAfterBuild(),
+               com.google.devtools.build.lib.skyframe.serialization.analysis.SkycacheKeyResolver.resolve(
+                   env.getWorkspace()));
       if (maybeFailureDetail.isPresent()) {
         throw new AbruptExitException(DetailedExitCode.of(maybeFailureDetail.get()));
       }
@@ -1318,8 +1321,15 @@ public class BuildTool {
     var listener = env.getRemoteAnalysisCachingEventListener();
     var hitsByFunction = listener.getHitsBySkyFunctionName();
     var missesByFunction = listener.getMissesBySkyFunctionName();
-    long totalHits = hitsByFunction.values().stream().mapToLong(AtomicLong::get).sum();
-    long totalMisses = missesByFunction.values().stream().mapToLong(AtomicLong::get).sum();
+
+    // Combine keys from both maps
+    Set<SkyFunctionName> allFunctionNames =
+        Sets.union(hitsByFunction.keySet(), missesByFunction.keySet()).stream()
+            .filter(name -> !name.getName().equals("ACTION_LOOKUP_CONFLICT_FINDING") && !name.getName().equals("ASPECT"))
+            .collect(com.google.common.collect.ImmutableSet.toImmutableSet());
+    
+    long totalHits = allFunctionNames.stream().mapToLong(name -> hitsByFunction.getOrDefault(name, new AtomicLong(0)).get()).sum();
+    long totalMisses = allFunctionNames.stream().mapToLong(name -> missesByFunction.getOrDefault(name, new AtomicLong(0)).get()).sum();
     long totalRequests = totalHits + totalMisses;
 
     checkState(totalRequests >= 0, "totalRequests should be non-negative");
@@ -1327,10 +1337,6 @@ public class BuildTool {
       // Don't report stats if there were no requests.
       return;
     }
-
-    // Combine keys from both maps
-    Set<SkyFunctionName> allFunctionNames =
-        Sets.union(hitsByFunction.keySet(), missesByFunction.keySet());
     // Format the stats per function, sorted alphabetically by function name
     String statsByFunction =
         allFunctionNames.stream()
@@ -1382,5 +1388,20 @@ public class BuildTool {
     int exponent = (int) (Math.log((double) bytes) / Math.log(k));
     String prefixedUnit = "KMGTPE".charAt(exponent - 1) + "B";
     return String.format("%.2f %s", bytes / Math.pow(k, exponent), prefixedUnit);
+  }
+
+  private static final class DummyVersionGetter implements com.google.devtools.build.lib.versioning.LongVersionGetter {
+    @Override
+    public long getFilePathOrSymlinkVersion(com.google.devtools.build.lib.vfs.Path path) {
+      return MINIMAL;
+    }
+    @Override
+    public long getDirectoryListingVersion(com.google.devtools.build.lib.vfs.Path path) {
+      return MINIMAL;
+    }
+    @Override
+    public long getNonexistentPathVersion(com.google.devtools.build.lib.vfs.Path path) {
+      return MINIMAL;
+    }
   }
 }

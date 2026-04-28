@@ -44,6 +44,7 @@ public interface RemoteAnalysisCacheReaderDepsProvider {
 
   RemoteAnalysisCacheClient getAnalysisCacheClient() throws InterruptedException;
 
+  ClientInvalidator getClientInvalidator() throws InterruptedException;
   void recordRetrievalResult(RetrievalResult retrievalResult, SkyKey key);
 
   void recordSerializationException(SerializationException e, SkyKey key);
@@ -53,4 +54,6 @@ public interface RemoteAnalysisCacheReaderDepsProvider {
 
   /** Returns true if Skycache is only used for analysis phase. */
   boolean getSkycacheAnalysisOnly();
+
+  String getWorkspaceRoot();
 }

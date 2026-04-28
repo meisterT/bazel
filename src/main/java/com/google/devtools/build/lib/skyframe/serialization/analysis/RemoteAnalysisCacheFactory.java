@@ -90,8 +90,17 @@ public final class RemoteAnalysisCacheFactory {
       Map<String, String> userOptions,
       Set<String> projectSclOptions)
       throws InterruptedException, AbruptExitException, InvalidConfigurationException {
-    // Bail out early if needed
     var options = env.getOptions().getOptions(RemoteAnalysisCachingOptions.class);
+    var skycacheOptions = env.getOptions().getOptions(SkycacheOptions.class);
+    if (options != null && skycacheOptions != null) {
+      var skycacheFlags = skycacheOptions.getSkycache();
+      if (skycacheFlags.contains("read")) {
+        options.setMode(RemoteAnalysisCacheMode.DOWNLOAD);
+      } else if (skycacheFlags.contains("write")) {
+        options.setMode(RemoteAnalysisCacheMode.UPLOAD);
+      }
+    }
+    // Bail out early if needed
     if (options == null
         || !env.getCommand().buildPhase().executes()
         || options.getMode() == RemoteAnalysisCacheMode.OFF) {
@@ -171,7 +180,7 @@ public final class RemoteAnalysisCacheFactory {
 
     RemoteAnalysisCachingServicesSupplier servicesSupplier =
         env.getBlazeWorkspace().remoteAnalysisCachingServicesSupplier();
-    servicesSupplier.configure(options, clientId, env.getCommandId().toString());
+    servicesSupplier.configure(options, clientId, env.getCommandId().toString(), env.getOptions(), env.getDirectories());
 
     // Set up parameters for the metadata store, if needed
 
@@ -209,7 +218,8 @@ public final class RemoteAnalysisCacheFactory {
             frontierNodeVersion,
             activeDirectoriesMatcher,
             options.getSerializedFrontierProfile(),
-            options.getSkycacheAnalysisOnly());
+            options.getSkycacheAnalysisOnly(),
+            env.getWorkspace());
 
     ListenableFuture<AnalysisCacheInvalidator> analysisCacheInvalidator =
         createAnalysisCacheInvalidator(
@@ -221,17 +231,24 @@ public final class RemoteAnalysisCacheFactory {
             servicesSupplier.getAnalysisCacheClient(),
             env.getRemoteAnalysisCachingEventListener());
 
-    var manager =
-        new RemoteAnalysisCacheManager(
-            options.getMode(),
-            areMetadataQueriesEnabled,
-            env.getReporter(),
-            skycacheMetadataParams,
-            servicesSupplier.getAnalysisCacheClient(),
-            analysisCacheInvalidator,
-            topLevelTargets,
-            activeDirectoriesMatcher,
-            options.getSkycacheMinimizeMemory());
+    RemoteAnalysisCacheManager manager = null;
+    try {
+      manager = new RemoteAnalysisCacheManager(
+          options.getMode(),
+          areMetadataQueriesEnabled,
+          env.getReporter(),
+          skycacheMetadataParams,
+          servicesSupplier.getAnalysisCacheClient(),
+          analysisCacheInvalidator,
+          servicesSupplier.getFingerprintValueService().get(),
+          objectCodecs.get(),
+          topLevelTargets,
+          activeDirectoriesMatcher,
+          options.getSkycacheMinimizeMemory(),
+          env.getWorkspace());
+    } catch (Exception e) {
+      env.getReporter().handle(Event.warn("Skycache: Failed to resolve futures for manager creation: " + e.getMessage()));
+    }
 
     // Bail out if needed
 
@@ -243,7 +260,9 @@ public final class RemoteAnalysisCacheFactory {
         try (SilentCloseable unused = Profiler.instance().profile("initAnalysisCacheClient")) {
           analysisCacheClient = deps.getAnalysisCacheClient();
         }
-        if (analysisCacheClient == null) {
+        var remoteOptions = env.getOptions().getOptions(com.google.devtools.build.lib.remote.options.RemoteOptions.class);
+        boolean isLocalDiskCacheEnabled = remoteOptions != null && remoteOptions.getDiskCache() != null;
+        if (analysisCacheClient == null && !isLocalDiskCacheEnabled) {
           if (Strings.isNullOrEmpty(options.getAnalysisCacheService())) {
             env.getReporter()
                 .handle(
@@ -314,12 +333,13 @@ public final class RemoteAnalysisCacheFactory {
       RuleClassProvider ruleClassProvider,
       SkyframeExecutor skyframeExecutor,
       BlazeDirectories directories,
-      BuildOptions topLevelOptions) {
+      BuildOptions topLevelOptions,
+      String workspaceName) {
     var roots = ImmutableList.<Root>builder().add(Root.fromPath(directories.getWorkspace()));
-    // TODO: b/406458763 - clean this up
-    if (Ascii.equalsIgnoreCase(directories.getProductName(), "blaze")) {
-      roots.add(Root.fromPath(directories.getBlazeExecRoot()));
-    }
+    // Decision (2026-04-28): Add execution root to package roots for both Blaze and Bazel
+    // to support serialization of artifacts in external repositories.
+    // Use the dynamically resolved workspaceName instead of hardcoded "_main".
+    roots.add(Root.fromPath(directories.getExecRoot(workspaceName)));
 
     ImmutableClassToInstanceMap.Builder<Object> serializationDeps =
         ImmutableClassToInstanceMap.builder()
@@ -328,7 +348,14 @@ public final class RemoteAnalysisCacheFactory {
                 skyframeExecutor.getSkyframeBuildView().getArtifactFactory()::getSourceArtifact)
             .put(RuleClassProvider.class, ruleClassProvider)
             .put(RootCodecDependencies.class, new RootCodecDependencies(roots.build()))
-            .put(PackagePathCodecDependencies.class, skyframeExecutor::getPackagePathEntries)
+            .put(com.google.devtools.build.lib.pkgcache.PackagePathCodecDependencies.class, () -> {
+              ImmutableList<Root> defaultRoots = skyframeExecutor.getPackagePathEntries();
+              ImmutableList.Builder<Root> builder = ImmutableList.builder();
+              builder.addAll(defaultRoots);
+              builder.add(Root.fromPath(directories.getExecRoot(workspaceName)));
+              builder.add(Root.fromPath(directories.getOutputBase().getChild("external")));
+              return builder.build();
+            })
             // This is needed to determine TargetData for a ConfiguredTarget during serialization.
             .put(PrerequisitePackageFunction.class, skyframeExecutor::getExistingPackage)
             .put(BuildOptions.class, topLevelOptions);
@@ -346,7 +373,8 @@ public final class RemoteAnalysisCacheFactory {
                 env.getRuntime().getRuleClassProvider(),
                 env.getBlazeWorkspace().getSkyframeExecutor(),
                 env.getDirectories(),
-                topLevelOptions),
+                topLevelOptions,
+                env.getWorkspaceName()),
         commonPool());
   }
 

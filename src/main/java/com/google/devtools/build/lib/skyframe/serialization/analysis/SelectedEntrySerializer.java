@@ -220,7 +220,8 @@ final class SelectedEntrySerializer implements Consumer<SkyKey> {
       KeyValueWriter fileInvalidationWriter,
       EventBus eventBus,
       ProfileCollector profileCollector,
-      SerializationStats serializationStats)
+      SerializationStats serializationStats,
+      java.util.function.BiConsumer<PackedFingerprint, byte[]> fingerprintCollector)
       throws InterruptedException {
     var fileOpNodes = new FileOpNodeMemoizingLookup(fingerprintValueService.getExecutor(), graph);
     var fileDependencySerializer =
@@ -242,7 +243,8 @@ final class SelectedEntrySerializer implements Consumer<SkyKey> {
             writeStatuses,
             eventBus,
             profileCollector,
-            serializationStats);
+            serializationStats,
+            fingerprintCollector);
 
     // A topological sort prevents the antipattern where one serializes a high level node, walks
     // its whole transitive closure, then serializes lower level nodes, thus revisiting the
@@ -275,6 +277,8 @@ final class SelectedEntrySerializer implements Consumer<SkyKey> {
     return writeStatuses;
   }
 
+  private final java.util.function.BiConsumer<PackedFingerprint, byte[]> fingerprintCollector;
+
   private SelectedEntrySerializer(
       InMemoryGraph graph,
       ObjectCodecs codecs,
@@ -285,7 +289,8 @@ final class SelectedEntrySerializer implements Consumer<SkyKey> {
       SerializationStatus writeStatuses,
       EventBus eventBus,
       ProfileCollector profileCollector,
-      SerializationStats serializationStats) {
+      SerializationStats serializationStats,
+      java.util.function.BiConsumer<PackedFingerprint, byte[]> fingerprintCollector) {
     this.graph = graph;
     this.codecs = codecs;
     this.frontierVersion = frontierVersion;
@@ -296,6 +301,7 @@ final class SelectedEntrySerializer implements Consumer<SkyKey> {
     this.eventBus = eventBus;
     this.profileCollector = profileCollector;
     this.serializationStats = serializationStats;
+    this.fingerprintCollector = fingerprintCollector;
   }
 
   @Override
@@ -363,21 +369,24 @@ final class SelectedEntrySerializer implements Consumer<SkyKey> {
         () -> writeStatuses.counters.entriesWaitingForValueBytes.decrementAndGet(),
         directExecutor());
 
-    new FileOpNodeProcessor(keyResultTask, valueResultTask, isExecutionValue(key), dependencyKey)
+    new FileOpNodeProcessor(key, keyResultTask, valueResultTask, isExecutionValue(key), dependencyKey)
         .run();
   }
 
   private final class FileOpNodeProcessor implements FutureCallback<FileOpNodeOrEmpty>, Runnable {
+    private final SkyKey key;
     private final AsyncSerializationTask keyResultTask;
     private final AsyncSerializationTask valueResultTask;
     private final boolean isExecutionValue;
     private final ActionLookupKey dependencyKey;
 
     private FileOpNodeProcessor(
+        SkyKey key,
         AsyncSerializationTask keyResultTask,
         AsyncSerializationTask valueResultTask,
         boolean isExecutionValue,
         ActionLookupKey dependencyKey) {
+      this.key = key;
       this.keyResultTask = keyResultTask;
       this.valueResultTask = valueResultTask;
       this.isExecutionValue = isExecutionValue;
@@ -508,6 +517,8 @@ final class SelectedEntrySerializer implements Consumer<SkyKey> {
               fingerprintValueService.fingerprint(
                   frontierVersion.concat(keyResult.getObject().toByteArray()));
           byte[] entryBytes = bytesOut.toByteArray();
+
+          fingerprintCollector.accept(versionedKey, keyResult.getObject().toByteArray());
 
           // Put this in a separate variable so that we don't close over potentially large byte
           // arrays

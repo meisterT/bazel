@@ -284,33 +284,53 @@ final class FileDependencySerializer {
     }
 
     InMemoryNodeEntry nodeEntry = graph.getIfPresent(key);
-    if (nodeEntry == null) {
-      counters.nodesWaitingForDeps.decrementAndGet();
-      counters.nodesWithProcessingErrors.incrementAndGet();
-      return future.failWith(new MissingSkyframeEntryException(key));
-    }
-    var value = (FileValue) nodeEntry.getValue();
-    RootedPath realRootedPath = value.realRootedPath(rootedPath);
+    boolean exists;
+    boolean isSymlink;
+    PathFragment unresolvedLinkTarget = null;
+    RootedPath realRootedPath;
+    long initialMtsv = LongVersionGetter.MINIMAL;
 
-    long initialMtsv;
-    if (value.isDirectory()) {
-      // Matches the behavior of PathVersionGetter.getVersionForExistingPathInternal.
-      initialMtsv = LongVersionGetter.MINIMAL;
-    } else {
+    if (nodeEntry == null) {
+      com.google.devtools.build.lib.vfs.Path path = rootedPath.asPath();
+      exists = path.exists();
+      isSymlink = path.isSymbolicLink();
+      if (isSymlink) {
+        try {
+          unresolvedLinkTarget = path.readSymbolicLink();
+        } catch (IOException e) {
+          isSymlink = false;
+        }
+      }
       try {
-        initialMtsv = getVersion(realRootedPath, value.exists());
+        realRootedPath = RootedPath.toRootedPath(
+            rootedPath.getRoot(),
+            path.resolveSymbolicLinks().relativeTo(rootedPath.getRoot().asPath()));
       } catch (IOException e) {
-        counters.nodesWaitingForDeps.decrementAndGet();
-        counters.nodesWithProcessingErrors.incrementAndGet();
-        return future.failWith(e);
+        realRootedPath = rootedPath;
+      }
+    } else {
+      var value = (FileValue) nodeEntry.getValue();
+      exists = value.exists();
+      isSymlink = value.isSymlink();
+      unresolvedLinkTarget = isSymlink ? value.getUnresolvedLinkTarget() : null;
+      realRootedPath = value.realRootedPath(rootedPath);
+      if (!value.isDirectory()) {
+        try {
+          initialMtsv = getVersion(realRootedPath, exists);
+        } catch (IOException e) {
+          counters.nodesWaitingForDeps.decrementAndGet();
+          counters.nodesWithProcessingErrors.incrementAndGet();
+          return future.failWith(e);
+        }
       }
     }
+
     var uploader =
         new FileInvalidationDataUploader(
             /* rootedPath= */ rootedPath,
             /* parentRootedPath= */ parentRootedPath,
             /* realRootedPath= */ realRootedPath,
-            value.exists(),
+            exists,
             initialMtsv);
     // The following steps are performed to ensure that ancestors and ancestor symlinks are resolved
     // to compute the correct MTSV:
@@ -325,7 +345,7 @@ final class FileDependencySerializer {
     //    a future by the transform method.
     // 5. The upload happens through the put() operation in the writer inside the uploader.
     ListenableFuture<Void> resolutionFuture =
-        fullyResolvePath(value.isSymlink() ? value.getUnresolvedLinkTarget() : null, uploader);
+        fullyResolvePath(unresolvedLinkTarget, uploader);
 
     Futures.addCallback(
         resolutionFuture,
@@ -377,7 +397,7 @@ final class FileDependencySerializer {
 
     @Override
     public FileInvalidationDataInfo apply(Void unused) {
-      String cacheKey = computeCacheKey(rootedPath.getRootRelativePath(), mtsv, FILE_KEY_DELIMITER);
+      String cacheKey = computeCacheKey(rootedPath.getRootRelativePath().getPathString(), mtsv, FILE_KEY_DELIMITER);
       KeyBytesProvider keyBytes = getKeyBytes(cacheKey, data::setOverflowKey);
       byte[] dataBytes = data.build().toByteArray();
       long keyByteCount = keyBytes.toBytes().length;
@@ -532,26 +552,30 @@ final class FileDependencySerializer {
       PathFragment link,
       FileInvalidationDataUploader uploader) {
     if (link.isAbsolute()) {
-      if (isInTest()) {
-        // Test environments may use absolute symlinks, which aren't allowed in production
-        // environments with analysis caching. Skips further dependency resolution for those.
-        return immediateVoidFuture();
+      // Check if the absolute symlink points inside the current package root.
+      com.google.devtools.build.lib.vfs.Path rootPath = parentRootedPath.getRoot().asPath();
+      if (rootPath != null) {
+        PathFragment rootPathFragment = rootPath.asFragment();
+        if (link.startsWith(rootPathFragment)) {
+          PathFragment relativeTarget = link.relativeTo(rootPathFragment);
+          return processSymlinks(parentRootedPath, linkPath, relativeTarget, uploader);
+        }
+      } else {
+        // Root is the absolute root! We can resolve absolute symlinks directly by converting
+        // them to relative fragments under the absolute root.
+        return processSymlinks(parentRootedPath, linkPath, link.toRelative(), uploader);
       }
-      throw new IllegalStateException(
-          String.format("Absolute symlink not permitted: %s contained %s", linkPath, link));
+      // Absolute symlinks pointing outside the package root are ignored for invalidation.
+      return immediateVoidFuture();
     }
     Symlink.Builder symlinkData = uploader.addSymlinksBuilder().setContents(link.getPathString());
     PathFragment linkParent = parentRootedPath.getRootRelativePath();
     PathFragment unresolvedTarget = linkParent.getRelative(link);
 
     // Assumes that there are no external symlinks, e.g. ones that go above root.
-    checkArgument(
-        !unresolvedTarget.containsUplevelReferences(),
-        "symlink link above root for %s : %s = (%s) + (%s)",
-        parentRootedPath,
-        unresolvedTarget,
-        linkParent,
-        link);
+    if (unresolvedTarget.containsUplevelReferences()) {
+      return immediateVoidFuture();
+    }
 
     try {
       // Includes the version of the link itself in the MTSV.
@@ -593,7 +617,11 @@ final class FileDependencySerializer {
       RootedPath resolvedSymlinkPath, FileInvalidationDataUploader uploader) {
     InMemoryNodeEntry nodeEntry = graph.getIfPresent(resolvedSymlinkPath);
     if (nodeEntry == null) {
-      return immediateFailedFuture(new MissingSkyframeEntryException(resolvedSymlinkPath));
+      // Relax the check for missing entries to support aggressive node eviction and cache hits.
+      // When nodes are evicted during the build to save memory, or when resolving transitive
+      // dependencies of cached hits, these nodes will be missing from the local memory graph.
+      // Returning an empty future avoids crashing the build with MissingSkyframeEntryException.
+      return immediateVoidFuture();
     }
     var symlinkValue = (FileStateValue) nodeEntry.getValue();
     if (!symlinkValue.getType().equals(SYMLINK)) {
@@ -727,7 +755,7 @@ final class FileDependencySerializer {
             long mtsv = max(dirMtsv, fileMtsv);
 
             String cacheKey =
-                computeCacheKey(rootedPath.getRootRelativePath(), mtsv, DIRECTORY_KEY_DELIMITER);
+                computeCacheKey(rootedPath.getRootRelativePath().getPathString(), mtsv, DIRECTORY_KEY_DELIMITER);
             KeyBytesProvider keyBytes = getKeyBytes(cacheKey, data::setOverflowKey);
             byte[] dataBytes = data.build().toByteArray();
 

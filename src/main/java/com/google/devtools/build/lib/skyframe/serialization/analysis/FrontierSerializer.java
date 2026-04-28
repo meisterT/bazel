@@ -105,7 +105,8 @@ public final class FrontierSerializer {
       LongVersionGetter versionGetter,
       Reporter reporter,
       EventBus eventBus,
-      boolean keepStateAfterBuild)
+      boolean keepStateAfterBuild,
+      String commit)
       throws InterruptedException {
     InMemoryGraph graph = evaluator.getInMemoryGraph();
     var stopwatch = Stopwatch.createStarted();
@@ -182,6 +183,8 @@ public final class FrontierSerializer {
     }
 
     stopwatch.reset().start();
+    record ManifestEntry(com.google.devtools.build.lib.skyframe.serialization.PackedFingerprint fp, byte[] keyBytes) {}
+    java.util.concurrent.ConcurrentLinkedQueue<ManifestEntry> fingerprints = new java.util.concurrent.ConcurrentLinkedQueue<>();
     ListenableFuture<ImmutableList<Throwable>> writeStatus =
         SelectedEntrySerializer.uploadSelection(
             graph,
@@ -193,7 +196,8 @@ public final class FrontierSerializer {
             serializationDependenciesProvider.getFileInvalidationWriter(),
             eventBus,
             profileCollector,
-            serializationStats);
+            serializationStats,
+            (fp, keyBytes) -> fingerprints.add(new ManifestEntry(fp, keyBytes)));
 
     try {
       // Waits for the write to complete uninterruptibly. This avoids returning to the caller
@@ -203,6 +207,37 @@ public final class FrontierSerializer {
         String message = getErrorMessage(errors);
         reporter.error(/* location= */ null, message, errors.get(0));
         return Optional.of(createFailureDetail(message, Code.SERIALIZED_FRONTIER_PROFILE_FAILED));
+      }
+
+      // Save manifest file
+      String manifestKey = commit.isEmpty() ? "manifest" : commit;
+      manifestKey += ":" + frontierVersion.getTopLevelConfigChecksum();
+      
+      // Serialize fingerprints list
+      java.io.ByteArrayOutputStream bytesOut = new java.io.ByteArrayOutputStream();
+      for (ManifestEntry entry : fingerprints) {
+        try {
+          bytesOut.write(entry.fp().toBytes());
+          // Write key length and key bytes
+          byte[] keyBytes = entry.keyBytes();
+          bytesOut.write(java.nio.ByteBuffer.allocate(4).putInt(keyBytes.length).array());
+          bytesOut.write(keyBytes);
+        } catch (java.io.IOException e) {
+          reporter.error(null, "Failed to serialize manifest entry: " + e.getMessage(), e);
+          return Optional.of(createFailureDetail("Failed to serialize manifest entry", Code.SERIALIZED_FRONTIER_PROFILE_FAILED));
+        }
+      }
+      byte[] manifestBytes = bytesOut.toByteArray();
+      
+      // Save to disk cache
+      var fvs = serializationDependenciesProvider.getFingerprintValueService();
+      if (fvs != null) {
+        try {
+          fvs.put(new com.google.devtools.build.lib.skyframe.serialization.StringKey(manifestKey), manifestBytes);
+          reporter.handle(Event.info("Saved Skycache manifest keyed by: " + manifestKey));
+        } catch (Exception e) {
+          reporter.error(null, "Failed to save manifest: " + e.getMessage(), e);
+        }
       }
 
       FingerprintValueStore.Stats stats =

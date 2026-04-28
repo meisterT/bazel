@@ -39,7 +39,11 @@ public interface RemoteAnalysisCachingServicesSupplier {
    * <p>This method updates the services and parameters when the relevant flags change.
    */
   default void configure(
-      RemoteAnalysisCachingOptions cachingOptions, @Nullable ClientId clientId, String buildId)
+      RemoteAnalysisCachingOptions cachingOptions,
+      @Nullable ClientId clientId,
+      String buildId,
+      com.google.devtools.common.options.OptionsParsingResult optionsResult,
+      com.google.devtools.build.lib.analysis.BlazeDirectories directories)
       throws AbruptExitException {
     // Does nothing by default.
   }

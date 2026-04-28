@@ -14,6 +14,11 @@
 
 package com.google.devtools.build.lib.skyframe.serialization.analysis;
 
+import com.google.devtools.build.lib.skyframe.serialization.GitDiffHelper;
+import com.google.devtools.build.lib.skyframe.serialization.InvalidationValidator;
+import com.google.protobuf.CodedInputStream;
+import com.google.devtools.build.lib.skyframe.serialization.proto.DataType;
+
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
@@ -41,9 +46,13 @@ public class RemoteAnalysisCacheManager implements RemoteAnalysisCachingDependen
 
   private final Future<? extends RemoteAnalysisCacheClient> analysisCacheClient;
   private final Future<? extends AnalysisCacheInvalidator> analysisCacheInvalidator;
+  
+  private com.google.devtools.build.lib.skyframe.serialization.FingerprintValueService fingerprintService;
+  private com.google.devtools.build.lib.skyframe.serialization.ObjectCodecs codecs;
 
   private final Collection<Label> topLevelTargets;
   private final Optional<Predicate<PackageIdentifier>> activeDirectoriesMatcher;
+  private final com.google.devtools.build.lib.vfs.Path workspaceRoot;
 
   private final ExtendedEventHandler eventHandler;
 
@@ -77,7 +86,9 @@ public class RemoteAnalysisCacheManager implements RemoteAnalysisCachingDependen
     this.eventHandler = null;
     this.skycacheMetadataParams = null;
     this.areMetadataQueriesEnabled = false;
+    this.workspaceRoot = null;
   }
+
 
   RemoteAnalysisCacheManager(
       RemoteAnalysisCacheMode mode,
@@ -86,18 +97,24 @@ public class RemoteAnalysisCacheManager implements RemoteAnalysisCachingDependen
       SkycacheMetadataParams skycacheMetadataParams,
       Future<? extends RemoteAnalysisCacheClient> analysisCacheClient,
       Future<? extends AnalysisCacheInvalidator> analysisCacheInvalidator,
+      com.google.devtools.build.lib.skyframe.serialization.FingerprintValueService fingerprintService,
+      com.google.devtools.build.lib.skyframe.serialization.ObjectCodecs codecs,
       Collection<Label> topLevelTargets,
       Optional<Predicate<PackageIdentifier>> activeDirectoriesMatcher,
-      boolean minimizeMemory) {
+      boolean minimizeMemory,
+      com.google.devtools.build.lib.vfs.Path workspaceRoot) {
     this.mode = mode;
     this.analysisCacheClient = analysisCacheClient;
     this.analysisCacheInvalidator = analysisCacheInvalidator;
+    this.fingerprintService = fingerprintService;
+    this.codecs = codecs;
     this.topLevelTargets = topLevelTargets;
     this.activeDirectoriesMatcher = activeDirectoriesMatcher;
     this.minimizeMemory = minimizeMemory;
     this.eventHandler = eventHandler;
     this.skycacheMetadataParams = skycacheMetadataParams;
     this.areMetadataQueriesEnabled = areMetadataQueriesEnabled;
+    this.workspaceRoot = workspaceRoot;
   }
 
   @Override
@@ -116,13 +133,17 @@ public class RemoteAnalysisCacheManager implements RemoteAnalysisCachingDependen
           Event.warn("Skycache: Not querying Skycache metadata because invocation has no targets"));
     } else {
       try {
+        var client = RemoteAnalysisCacheDeps.resolveWithTimeout(analysisCacheClient, "analysis cache client");
+        if (client == null) {
+          eventHandler.handle(Event.warn("Skycache: Metadata store unavailable (client is null). Skipping metadata query."));
+          return;
+        }
         LookupTopLevelTargetsResult result =
-            RemoteAnalysisCacheDeps.resolveWithTimeout(analysisCacheClient, "analysis cache client")
-                .lookupTopLevelTargets(
-                    skycacheMetadataParams.getEvaluatingVersion(),
-                    skycacheMetadataParams.getConfigurationHash(),
-                    skycacheMetadataParams.getUseFakeStampData(),
-                    skycacheMetadataParams.getBazelVersion());
+            client.lookupTopLevelTargets(
+                skycacheMetadataParams.getEvaluatingVersion(),
+                skycacheMetadataParams.getConfigurationHash(),
+                skycacheMetadataParams.getUseFakeStampData(),
+                skycacheMetadataParams.getBazelVersion());
 
         Event event =
             switch (result.status()) {
@@ -150,16 +171,132 @@ public class RemoteAnalysisCacheManager implements RemoteAnalysisCachingDependen
       RemoteAnalysisCachingServerState remoteAnalysisCachingState)
       throws InterruptedException {
     checkEnabled();
-    AnalysisCacheInvalidator invalidator =
-        RemoteAnalysisCacheDeps.resolveWithTimeout(
-            analysisCacheInvalidator, "analysis cache invalidator");
-    if (invalidator == null) {
-      // We need to know which keys to invalidate but we don't have an invalidator, presumably
-      // because the backend services couldn't be contacted. Play if safe and invalidate every
-      // value retrieved from the remote cache.
+      // Milestone 2: Hook up validation in cache lookup
+      // Read manifest to get fingerprints
+       var fvs = fingerprintService;
+      if (fvs != null) {
+        String baseCommit = null;
+        try {
+          baseCommit = GitDiffHelper.detectBaseCommit(workspaceRoot != null ? workspaceRoot.getPathString() : null);
+        } catch (java.io.IOException e) {
+          eventHandler.handle(Event.warn("Skycache: Failed to detect base commit: " + e.getMessage()));
+        }
+        if (baseCommit != null) {
+          if (skycacheMetadataParams == null) {
+            eventHandler.handle(Event.warn("Skycache: skycacheMetadataParams is null, falling back to coarse invalidation"));
+            return keysToLookupSupplier.get();
+          }
+          String manifestKeyPrefix = baseCommit.isEmpty() ? "manifest" : baseCommit;
+          String manifestKey = manifestKeyPrefix + ":" + skycacheMetadataParams.getConfigurationHash();
+          try {
+            byte[] manifestBytes = fvs.get(new com.google.devtools.build.lib.skyframe.serialization.StringKey(manifestKey)).get();
+            if (manifestBytes != null) {
+              Set<String> modifiedFiles;
+              String testModifiedFiles = System.getProperty("bazel.skycache.test.modified_files");
+              if (testModifiedFiles != null) {
+                modifiedFiles = testModifiedFiles.isEmpty()
+                    ? ImmutableSet.of()
+                    : ImmutableSet.copyOf(testModifiedFiles.split(","));
+              } else {
+                modifiedFiles = GitDiffHelper.getModifiedFiles(workspaceRoot != null ? workspaceRoot.getPathString() : null, baseCommit);
+              }
+              eventHandler.handle(Event.info("Skycache: Aligned manifest loaded. Size: " + manifestBytes.length + " bytes. Git modified files count: " + modifiedFiles.size()));
+              ImmutableSet.Builder<SkyKey> invalidKeysBuilder = ImmutableSet.builder();
+              
+              // Manifest format: [fpBytes] [keyBytesLength] [keyBytes]
+              int fpSize = 16; // Assuming 128-bit hash produced short safe filenames earlier
+              int i = 0;
+              int entriesAnalyzed = 0;
+              while (i < manifestBytes.length) {
+                byte[] fpBytes = new byte[fpSize];
+                System.arraycopy(manifestBytes, i, fpBytes, 0, fpSize);
+                i += fpSize;
+                
+                int keyLen = java.nio.ByteBuffer.wrap(manifestBytes, i, 4).getInt();
+                i += 4;
+                byte[] keyBytes = new byte[keyLen];
+                System.arraycopy(manifestBytes, i, keyBytes, 0, keyLen);
+                i += keyLen;
+                
+                com.google.devtools.build.lib.skyframe.serialization.PackedFingerprint fp = com.google.devtools.build.lib.skyframe.serialization.PackedFingerprint.fromBytes(fpBytes);
+                
+                // Deserialize key to get SkyKey
+                com.google.devtools.build.skyframe.SkyKey nodeKey = null;
+                try {
+                  nodeKey = (com.google.devtools.build.skyframe.SkyKey) codecs.deserializeMemoizedAndBlocking(fingerprintService, com.google.protobuf.ByteString.copyFrom(keyBytes));
+                } catch (Exception e) {
+                  eventHandler.handle(Event.warn("Skycache: Failed to deserialize key from manifest: " + e.getMessage()));
+                  continue; // Skip this entry if key deserialization fails
+                }
+                
+                entriesAnalyzed++;
+                // Fetch entry to get invalidation data
+                byte[] entryBytes = fingerprintService.get(fp).get();
+                if (entryBytes != null) {
+                  CodedInputStream codedIn = CodedInputStream.newInstance(entryBytes);
+                  int typeNum = codedIn.readEnum();
+                  DataType type = DataType.forNumber(typeNum);
+                  
+                  if (type == null) {
+                    invalidKeysBuilder.add(nodeKey); // Corrupted entry, invalidate to be safe
+                    continue;
+                  }
+
+                  switch (type) {
+                    case DATA_TYPE_EMPTY:
+                      // No dependencies, valid.
+                      break;
+                    case DATA_TYPE_FILE: {
+                      String cacheKey = codedIn.readString();
+                      int delimIdx = cacheKey.indexOf(':');
+                      if (delimIdx != -1) {
+                        String path = cacheKey.substring(delimIdx + 1);
+                        if (modifiedFiles.contains(path)) {
+                          invalidKeysBuilder.add(nodeKey);
+                        }
+                      }
+                      break;
+                    }
+                    case DATA_TYPE_LISTING: {
+                      String cacheKey = codedIn.readString();
+                      int delimIdx = cacheKey.indexOf(';');
+                      if (delimIdx != -1) {
+                        String path = cacheKey.substring(delimIdx + 1);
+                        // Check if the modifiedFiles contains any file under this directory path
+                        if (modifiedFiles.stream().anyMatch(f -> f.startsWith(path))) {
+                          invalidKeysBuilder.add(nodeKey);
+                        }
+                      }
+                      break;
+                    }
+                    case DATA_TYPE_ANALYSIS_NODE:
+                    case DATA_TYPE_EXECUTION_NODE: {
+                      // It's a nested invalidation node (transitive dependencies)
+                      com.google.devtools.build.lib.skyframe.serialization.PackedFingerprint nestedKey =
+                          com.google.devtools.build.lib.skyframe.serialization.PackedFingerprint.readFrom(codedIn);
+
+                      // Use ClientInvalidator to recursively validate
+                       ClientInvalidator invalidator = new ClientInvalidator(fingerprintService, modifiedFiles, workspaceRoot != null ? workspaceRoot.getPathString() : null);
+                       if (invalidator.isInvalidAsync(nestedKey).get()) {
+                        invalidKeysBuilder.add(nodeKey);
+                      }
+                      break;
+                    }
+                  }
+                }
+              }
+              var invalidKeys = invalidKeysBuilder.build();
+              eventHandler.handle(Event.info("Skycache: Invalidation check complete. Analyzed entries: " + entriesAnalyzed + ". Invalidated keys: " + invalidKeys.size()));
+              return invalidKeys;
+            }
+          } catch (Exception e) {
+            eventHandler.handle(Event.warn("Skycache: Error reading manifest or performing validation: " + e.getMessage()));
+          }
+        }
+      }
+      
+      // Fall back to play safe if manifest read or validation fails
       return keysToLookupSupplier.get();
-    }
-    return invalidator.lookupKeysToInvalidate(keysToLookupSupplier, remoteAnalysisCachingState);
   }
 
   @Override
