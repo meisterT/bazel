@@ -28,7 +28,7 @@ public final class LongVersionGetterTestInjection {
   private static LongVersionGetter versionGetter = null;
   private static boolean wasAccessed = false;
 
-  static LongVersionGetter getVersionGetterForTesting() {
+  public static LongVersionGetter getVersionGetterForTesting() {
     checkState(isInTest());
     wasAccessed = true;
     return checkNotNull(versionGetter, "injectVersionGetterForTesting must be called first");

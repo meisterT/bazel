@@ -14,6 +14,10 @@
 package com.google.devtools.build.lib.skyframe.serialization.analysis;
 
 import com.google.common.flogger.GoogleLogger;
+import com.google.devtools.build.lib.vfs.FileSystem;
+import com.google.devtools.build.lib.vfs.Path;
+import com.google.devtools.build.lib.vfs.Symlinks;
+import com.google.devtools.build.lib.versioning.LongVersionGetter;
 import static com.google.common.util.concurrent.Futures.immediateFuture;
 import static com.google.common.util.concurrent.Futures.transform;
 import static com.google.common.util.concurrent.Futures.transformAsync;
@@ -45,16 +49,22 @@ public class LocalAnalysisCacheClient implements RemoteAnalysisCacheClient {
   private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
 
   private final FingerprintValueStore store;
-  private final GitWorkspaceState gitState;
+  private final FileSystem fileSystem;
+  private final LongVersionGetter versionGetter;
   private final Executor executor;
 
   // Cache to avoid validating the same node multiple times in a build.
   private final ConcurrentHashMap<PackedFingerprint, ListenableFuture<Boolean>> validationCache = new ConcurrentHashMap<>();
   private final AtomicInteger cacheHits = new AtomicInteger(0);
 
-  public LocalAnalysisCacheClient(FingerprintValueStore store, GitWorkspaceState gitState, Executor executor) {
+  public LocalAnalysisCacheClient(
+      FingerprintValueStore store,
+      FileSystem fileSystem,
+      LongVersionGetter versionGetter,
+      Executor executor) {
     this.store = store;
-    this.gitState = gitState;
+    this.fileSystem = fileSystem;
+    this.versionGetter = versionGetter;
     this.executor = executor;
   }
 
@@ -147,12 +157,32 @@ public class LocalAnalysisCacheClient implements RemoteAnalysisCacheClient {
     if (delimiterIdx == -1) {
       return false;
     }
-    String path = fileKey.substring(delimiterIdx + 1);
-    boolean dirty = gitState.isFileDirty(path);
-    if (dirty) {
-      logger.atFine().log("validateFileKey: file is DIRTY: %s", path);
+    String encodedMtsv = fileKey.substring(0, delimiterIdx);
+    String pathStr = fileKey.substring(delimiterIdx + 1);
+    long expectedVersion = FileDependencyKeySupport.decodeMtsv(encodedMtsv);
+    Path path = fileSystem.getPath(pathStr);
+    try {
+      long currentVersion;
+      if (path.exists(Symlinks.NOFOLLOW)) {
+        if (path.isDirectory(Symlinks.NOFOLLOW)) {
+          currentVersion = LongVersionGetter.MINIMAL;
+        } else {
+          currentVersion = versionGetter.getFilePathOrSymlinkVersion(path);
+        }
+      } else {
+        currentVersion = versionGetter.getNonexistentPathVersion(path);
+      }
+      boolean valid = currentVersion == expectedVersion;
+      if (!valid) {
+        logger.atFine().log(
+            "validateFileKey: version mismatch for %s: expected %d, got %d",
+            pathStr, expectedVersion, currentVersion);
+      }
+      return valid;
+    } catch (IOException e) {
+      logger.atWarning().withCause(e).log("Failed to validate file key: %s", pathStr);
+      return false;
     }
-    return !dirty;
   }
 
   private boolean validateListingKey(String listingKey) {
@@ -160,12 +190,23 @@ public class LocalAnalysisCacheClient implements RemoteAnalysisCacheClient {
     if (delimiterIdx == -1) {
       return false;
     }
-    String path = listingKey.substring(delimiterIdx + 1);
-    boolean dirty = gitState.isListingDirty(path);
-    if (dirty) {
-      logger.atFine().log("validateListingKey: listing is DIRTY: %s", path);
+    String encodedMtsv = listingKey.substring(0, delimiterIdx);
+    String pathStr = listingKey.substring(delimiterIdx + 1);
+    long expectedVersion = FileDependencyKeySupport.decodeMtsv(encodedMtsv);
+    Path path = fileSystem.getPath(pathStr);
+    try {
+      long currentVersion = versionGetter.getDirectoryListingVersion(path);
+      boolean valid = currentVersion == expectedVersion;
+      if (!valid) {
+        logger.atFine().log(
+            "validateListingKey: version mismatch for %s: expected %d, got %d",
+            pathStr, expectedVersion, currentVersion);
+      }
+      return valid;
+    } catch (IOException e) {
+      logger.atWarning().withCause(e).log("Failed to validate listing key: %s", pathStr);
+      return false;
     }
-    return !dirty;
   }
 
   private ListenableFuture<Boolean> validateNodeRecursively(PackedFingerprint nodeKey) {

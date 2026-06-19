@@ -524,15 +524,16 @@ java_library(
 java_library(
     name = "local_analysis_cache_client",
     srcs = [
-        "GitWorkspaceState.java",
         "LocalAnalysisCacheClient.java",
     ],
     deps = [
+        ":file_dependency_key_support",
         ":magic_bytes",
         ":remote_analysis_cache_client",
         ":lookup_result",
         "//src/main/java/com/google/devtools/build/lib/skyframe/serialization",
         "//src/main/java/com/google/devtools/build/lib/skyframe/serialization:fingerprint_value_store",
+        "//src/main/java/com/google/devtools/build/lib/versioning:long_version_getter",
         "//src/main/java/com/google/devtools/build/lib/vfs",
         "//src/main/java/com/google/devtools/build/lib/skyframe/serialization/analysis/proto:analysis_cache_service_metadata_status_java_proto",
         "//src/main/protobuf:file_invalidation_data_java_proto",

@@ -14,10 +14,12 @@ filegroup(
 java_library(
     name = "long_version_getter",
     srcs = [
+        "ContentHashVersionGetter.java",
         "LongVersionGetter.java",
         "MtimeVersionGetter.java",
     ],
     deps = [
         "//src/main/java/com/google/devtools/build/lib/vfs",
+        "//third_party:guava",
     ],
 )

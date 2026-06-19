@@ -40,6 +40,7 @@ final class FileDependencyKeySupport {
   static final byte DIRECTORY_KEY_DELIMITER = (byte) ';';
 
   private static final Base64.Encoder ENCODER = Base64.getEncoder().withoutPadding();
+  private static final Base64.Decoder DECODER = Base64.getDecoder();
 
   static byte[] encodeMtsv(long mtsv) {
     if (mtsv < 0) {
@@ -48,6 +49,14 @@ final class FileDependencyKeySupport {
     }
     // Uses a BigInteger to trim leading 0 bytes.
     return ENCODER.encode(BigInteger.valueOf(mtsv).toByteArray());
+  }
+
+  static long decodeMtsv(String encodedMtsv) {
+    if (encodedMtsv.isEmpty()) {
+      return LongVersionGetter.MINIMAL;
+    }
+    byte[] decoded = DECODER.decode(encodedMtsv.getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+    return new BigInteger(decoded).longValue();
   }
 
   static String computeCacheKey(PathFragment path, long mtsv, byte delimiter) {

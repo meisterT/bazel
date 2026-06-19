@@ -26,10 +26,12 @@ import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnaly
 import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCacheStorageType;
 import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCachingConfig;
 import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCachingServicesSupplier;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.GitWorkspaceState;
 import com.google.devtools.build.lib.skyframe.serialization.analysis.LocalAnalysisCacheClient;
 import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCacheClient;
-import com.google.devtools.build.lib.versioning.MtimeVersionGetter;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.LongVersionGetterTestInjection;
+import com.google.devtools.build.lib.util.TestType;
+import com.google.devtools.build.lib.versioning.ContentHashVersionGetter;
+import com.google.devtools.build.lib.versioning.LongVersionGetter;
 import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
 import com.google.errorprone.annotations.ForOverride;
 import java.util.function.Supplier;
@@ -67,7 +69,13 @@ public class SerializationModule extends BlazeModule {
 
   @Override
   public void beforeCommand(CommandEnvironment env) {
-    env.setVersionGetter(new MtimeVersionGetter());
+    LongVersionGetter versionGetter;
+    if (TestType.isInTest()) {
+      versionGetter = LongVersionGetterTestInjection.getVersionGetterForTesting();
+    } else {
+      versionGetter = new ContentHashVersionGetter();
+    }
+    env.setVersionGetter(versionGetter);
     if (this.supplier != null) {
       this.supplier.beforeCommand(env);
     }
@@ -119,15 +127,14 @@ public class SerializationModule extends BlazeModule {
     @Nullable private ListenableFuture<? extends FingerprintValueStore> storeFuture;
     @Nullable private LocalAnalysisCacheClient client;
     @Nullable private ListenableFuture<? extends RemoteAnalysisCacheClient> clientFuture;
-    private final GitWorkspaceState gitState;
+    @Nullable private CommandEnvironment env;
 
     private PersistentRemoteAnalysisCachingServicesSupplier(BlazeDirectories directories) {
       this.directories = directories;
-      this.gitState = new GitWorkspaceState(directories.getWorkspace());
     }
 
     public void beforeCommand(CommandEnvironment env) {
-      gitState.update();
+      this.env = env;
       if (client != null) {
         client.clearValidationCache();
       }
@@ -138,18 +145,27 @@ public class SerializationModule extends BlazeModule {
         RemoteAnalysisCachingConfig config, @Nullable ClientId clientId, String buildId)
         throws com.google.devtools.build.lib.util.SerializedAbruptExitException {
       if (config.mode() != RemoteAnalysisCacheMode.OFF && storeFuture == null) {
+        LongVersionGetter versionGetter = env != null ? env.getVersionGetter() : new ContentHashVersionGetter();
         if (config.storageType() == RemoteAnalysisCacheStorageType.HDD
             || config.storageType() == RemoteAnalysisCacheStorageType.BOTH) {
           com.google.devtools.build.lib.vfs.Path cacheDir =
               directories.getOutputBase().getRelative("skycache");
           this.store = new DiskFingerprintValueStore(cacheDir);
           this.storeFuture = immediateFuture(store);
-          this.client = new LocalAnalysisCacheClient(store, gitState, directExecutor());
+          this.client = new LocalAnalysisCacheClient(
+              store,
+              directories.getWorkspace().getFileSystem(),
+              versionGetter,
+              directExecutor());
           this.clientFuture = immediateFuture(client);
         } else {
           this.store = new InMemoryFingerprintValueStore();
           this.storeFuture = immediateFuture(store);
-          this.client = new LocalAnalysisCacheClient(store, gitState, directExecutor());
+          this.client = new LocalAnalysisCacheClient(
+              store,
+              directories.getWorkspace().getFileSystem(),
+              versionGetter,
+              directExecutor());
           this.clientFuture = immediateFuture(client);
         }
       }

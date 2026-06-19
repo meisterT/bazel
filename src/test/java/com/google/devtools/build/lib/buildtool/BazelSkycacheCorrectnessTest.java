@@ -35,7 +35,6 @@ import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnaly
 import com.google.devtools.build.lib.skyframe.serialization.analysis.LocalAnalysisCacheClient;
 import com.google.devtools.build.lib.runtime.BlazeRuntime;
 import com.google.devtools.build.lib.versioning.LongVersionGetter;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.GitWorkspaceState;
 import static com.google.devtools.build.lib.skyframe.serialization.analysis.LongVersionGetterTestInjection.injectVersionGetterForTesting;
 import org.junit.After;
 import org.junit.Before;
@@ -68,7 +67,6 @@ public class BazelSkycacheCorrectnessTest extends BuildIntegrationTestCase {
 
   @After
   public final void tearDown() throws Exception {
-    GitWorkspaceState.mockInstance = null;
   }
 
   @Override
@@ -263,7 +261,6 @@ public class BazelSkycacheCorrectnessTest extends BuildIntegrationTestCase {
   @Test
   public void testRamCacheIntegration() throws Exception {
     injectVersionGetterForTesting(DUMMY_VERSION_GETTER);
-    GitWorkspaceState.mockInstance = new MockGitWorkspaceState();
 
     // 1. Build in UPLOAD mode
     addOptions(
@@ -300,9 +297,8 @@ public class BazelSkycacheCorrectnessTest extends BuildIntegrationTestCase {
 
   @Test
   public void testRamCacheInvalidation() throws Exception {
-    injectVersionGetterForTesting(DUMMY_VERSION_GETTER);
-    MockGitWorkspaceState mock = new MockGitWorkspaceState();
-    GitWorkspaceState.mockInstance = mock;
+    MockLongVersionGetter mockVersionGetter = new MockLongVersionGetter(DUMMY_VERSION_GETTER);
+    injectVersionGetterForTesting(mockVersionGetter);
 
     // 1. Build in UPLOAD mode
     addOptions(
@@ -321,7 +317,7 @@ public class BazelSkycacheCorrectnessTest extends BuildIntegrationTestCase {
     clean();
 
     // 3. Mark pkg/BUILD as dirty in mock
-    mock.addDirtyFile("pkg/BUILD");
+    mockVersionGetter.setFileOverride(directories.getWorkspace().getRelative("pkg/BUILD"), 99999L);
 
     // 4. Build in DOWNLOAD mode. This should NOT get cache hits for affected nodes.
     addOptions(
@@ -349,7 +345,6 @@ public class BazelSkycacheCorrectnessTest extends BuildIntegrationTestCase {
   @Test
   public void testDiskCacheReader() throws Exception {
     injectVersionGetterForTesting(DUMMY_VERSION_GETTER);
-    GitWorkspaceState.mockInstance = new MockGitWorkspaceState();
 
     // 1. Build in UPLOAD mode (HDD)
     addOptions(
@@ -393,33 +388,42 @@ public class BazelSkycacheCorrectnessTest extends BuildIntegrationTestCase {
     assertThat(client.getCacheHits()).isGreaterThan(0);
   }
 
-  private static class MockGitWorkspaceState extends GitWorkspaceState {
-    private final java.util.Set<String> dirtyFiles = new java.util.HashSet<>();
-    private final java.util.Set<String> dirtyListings = new java.util.HashSet<>();
+  private static class MockLongVersionGetter implements LongVersionGetter {
+    private final LongVersionGetter delegate;
+    private final java.util.Map<Path, Long> fileOverrides = new java.util.HashMap<>();
+    private final java.util.Map<Path, Long> listingOverrides = new java.util.HashMap<>();
 
-    public MockGitWorkspaceState() {
-      super(null);
+    public MockLongVersionGetter(LongVersionGetter delegate) {
+      this.delegate = delegate;
     }
 
-    public void addDirtyFile(String path) {
-      dirtyFiles.add(path);
+    public void setFileOverride(Path path, long version) {
+      fileOverrides.put(path, version);
     }
 
-    public void addDirtyListing(String path) {
-      dirtyListings.add(path);
-    }
-
-    @Override
-    public void update() {}
-
-    @Override
-    public boolean isFileDirty(String path) {
-      return dirtyFiles.contains(path);
+    public void setListingOverride(Path path, long version) {
+      listingOverrides.put(path, version);
     }
 
     @Override
-    public boolean isListingDirty(String path) {
-      return dirtyListings.contains(path);
+    public long getFilePathOrSymlinkVersion(Path path) throws java.io.IOException {
+      if (fileOverrides.containsKey(path)) {
+        return fileOverrides.get(path);
+      }
+      return delegate.getFilePathOrSymlinkVersion(path);
+    }
+
+    @Override
+    public long getDirectoryListingVersion(Path path) throws java.io.IOException {
+      if (listingOverrides.containsKey(path)) {
+        return listingOverrides.get(path);
+      }
+      return delegate.getDirectoryListingVersion(path);
+    }
+
+    @Override
+    public long getNonexistentPathVersion(Path path) throws java.io.IOException {
+      return delegate.getNonexistentPathVersion(path);
     }
   }
 }

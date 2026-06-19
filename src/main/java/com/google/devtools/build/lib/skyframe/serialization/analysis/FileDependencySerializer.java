@@ -374,7 +374,7 @@ final class FileDependencySerializer {
 
     @Override
     public FileInvalidationDataInfo apply(Void unused) {
-      String cacheKey = computeCacheKey(rootedPath.getRootRelativePath(), mtsv, FILE_KEY_DELIMITER);
+      String cacheKey = computeCacheKey(rootedPath.asPath().getPathString(), mtsv, FILE_KEY_DELIMITER);
       KeyBytesProvider keyBytes = getKeyBytes(cacheKey, data::setOverflowKey);
       byte[] dataBytes = data.build().toByteArray();
       long keyByteCount = keyBytes.toBytes().length;
@@ -722,7 +722,7 @@ final class FileDependencySerializer {
             long mtsv = max(dirMtsv, fileMtsv);
 
             String cacheKey =
-                computeCacheKey(rootedPath.getRootRelativePath(), mtsv, DIRECTORY_KEY_DELIMITER);
+                computeCacheKey(rootedPath.asPath().getPathString(), mtsv, DIRECTORY_KEY_DELIMITER);
             KeyBytesProvider keyBytes = getKeyBytes(cacheKey, data::setOverflowKey);
             byte[] dataBytes = data.build().toByteArray();
 
