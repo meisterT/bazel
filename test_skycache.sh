@@ -39,7 +39,9 @@ echo "=== Cleaning to reset Skyframe (Cold baseline) ==="
 
 # 5. Cold run (Vanilla) - Baseline (now fast because Bzlmod is warm in output_base)
 echo "=== Running cold vanilla build ==="
-time "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" build --nobuild //:target
+time "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" build \
+  --profile=/tmp/profile_vanilla.json.gz \
+  --nobuild //:target
 
 # 6. Clean to reset Skyframe
 "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" clean
@@ -50,6 +52,7 @@ time "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" bu
   --experimental_remote_analysis_cache_mode=upload \
   --experimental_remote_analysis_cache_storage=HDD \
   --experimental_skycache_analysis_only=true \
+  --profile=/tmp/profile_upload.json.gz \
   --nobuild //:target
 
 # 8. Clean to reset Skyframe (keeps disk cache under outputBase/skycache)
@@ -78,6 +81,7 @@ time "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" bu
   --experimental_remote_analysis_cache_mode=download \
   --experimental_remote_analysis_cache_storage=HDD \
   --experimental_skycache_analysis_only=true \
+  --profile=/tmp/profile_download.json.gz \
   --nobuild //:target
 
 # Restore the file to avoid polluting the repo for next runs
