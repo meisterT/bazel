@@ -11,8 +11,14 @@ with open(os.path.join(repo_dir, "WORKSPACE"), "w") as f:
 # Create rules.bzl with a slow rule
 with open(os.path.join(repo_dir, "rules.bzl"), "w") as f:
     f.write('''
+MyInfo = provider()
+
 def _slow_rule_impl(ctx):
-    return [DefaultInfo()]
+    # Dummy work to slow down analysis using string concatenation (O(N^2))
+    x = ""
+    for i in range(10000):
+        x += str(i)
+    return [DefaultInfo(), MyInfo(val = x)]
 
 slow_rule = rule(
     implementation = _slow_rule_impl,
@@ -27,9 +33,10 @@ slow_rule = rule(
 with open(os.path.join(repo_dir, "BUILD"), "w") as f:
     pass
 
-# We want 5 packages, each with 10 targets. Total 50 targets.
-num_packages = 5
-targets_per_package = 10
+# Parameters to control repo size and complexity
+num_packages = 30
+targets_per_package = 100
+num_deps = 10
 
 random.seed(42)
 
@@ -41,8 +48,8 @@ for i in range(num_packages):
         for j in range(targets_per_package):
             deps = []
             if i > 0:
-                # depend on 5 targets from previous package
-                dep_indices = random.sample(range(targets_per_package), 5)
+                # depend on N targets from previous package
+                dep_indices = random.sample(range(targets_per_package), num_deps)
                 for dep_j in dep_indices:
                     deps.append(f'"//pkg_{i-1}:target_{dep_j}"')
             

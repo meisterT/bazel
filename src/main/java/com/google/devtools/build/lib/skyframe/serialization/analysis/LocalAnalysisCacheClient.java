@@ -55,6 +55,8 @@ public class LocalAnalysisCacheClient implements RemoteAnalysisCacheClient {
 
   // Cache to avoid validating the same node multiple times in a build.
   private final ConcurrentHashMap<PackedFingerprint, ListenableFuture<Boolean>> validationCache = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<String, Boolean> validatedFiles = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<String, Boolean> validatedListings = new ConcurrentHashMap<>();
   private final AtomicInteger cacheHits = new AtomicInteger(0);
 
   public LocalAnalysisCacheClient(
@@ -70,6 +72,8 @@ public class LocalAnalysisCacheClient implements RemoteAnalysisCacheClient {
 
   public void clearValidationCache() {
     validationCache.clear();
+    validatedFiles.clear();
+    validatedListings.clear();
     cacheHits.set(0);
   }
 
@@ -153,6 +157,10 @@ public class LocalAnalysisCacheClient implements RemoteAnalysisCacheClient {
   }
 
   private boolean validateFileKey(String fileKey) {
+    return validatedFiles.computeIfAbsent(fileKey, this::doValidateFileKey);
+  }
+
+  private Boolean doValidateFileKey(String fileKey) {
     int delimiterIdx = fileKey.indexOf(':');
     if (delimiterIdx == -1) {
       return false;
@@ -186,6 +194,10 @@ public class LocalAnalysisCacheClient implements RemoteAnalysisCacheClient {
   }
 
   private boolean validateListingKey(String listingKey) {
+    return validatedListings.computeIfAbsent(listingKey, this::doValidateListingKey);
+  }
+
+  private Boolean doValidateListingKey(String listingKey) {
     int delimiterIdx = listingKey.indexOf(';');
     if (delimiterIdx == -1) {
       return false;
