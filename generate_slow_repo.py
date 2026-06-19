@@ -19,7 +19,20 @@ def _slow_rule_impl(ctx):
     x = ""
     for i in range(20000):
         x += str(i)
-    return [DefaultInfo(), MyInfo(val = x)]
+    
+    out = ctx.actions.declare_file(ctx.label.name + ".out")
+    
+    dep_files = []
+    for dep in ctx.attr.deps:
+        dep_files.append(dep[DefaultInfo].files)
+    inputs = depset(transitive = dep_files)
+    
+    ctx.actions.run_shell(
+        outputs = [out],
+        inputs = inputs,
+        command = "echo 'hello' > " + out.path,
+    )
+    return [DefaultInfo(files = depset([out])), MyInfo(val = x)]
 
 slow_rule = rule(
     implementation = _slow_rule_impl,

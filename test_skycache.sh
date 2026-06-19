@@ -50,10 +50,9 @@ echo "=== Cleaning to reset Skyframe (Cold baseline) ==="
 echo "=== Running cold vanilla build ==="
 time "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" build \
   --profile=/tmp/profile_vanilla.json.gz \
-  --nobuild //:target
+  //:target
 
 # ==================== REMOTE CACHE TESTING ====================
-
 # 6. Clean to reset Skyframe
 "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" clean
 
@@ -63,9 +62,9 @@ time "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" bu
   --config=remote \
   --experimental_remote_analysis_cache_mode=upload \
   --experimental_remote_analysis_cache_storage=REMOTE \
-  --experimental_skycache_analysis_only=true \
+  --experimental_skycache_analysis_only=false \
   --profile=/tmp/profile_upload_remote.json.gz \
-  --nobuild //:target
+  //:target
 
 # 8. Clean to reset Skyframe (forces download next run)
 echo "=== Cleaning ==="
@@ -77,8 +76,8 @@ time "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" bu
   --config=remote \
   --experimental_remote_analysis_cache_mode=download \
   --experimental_remote_analysis_cache_storage=REMOTE \
-  --experimental_skycache_analysis_only=true \
-  --nobuild //:target
+  --experimental_skycache_analysis_only=false \
+  //:target
 
 # 10. Modify a file (last package to test fine-grained invalidation)
 echo "=== Modifying pkg_4/BUILD ==="
@@ -88,60 +87,14 @@ echo "# dirty" >> "$TEST_REPO/pkg_4/BUILD"
 "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" clean
 
 # 12. Download run after change (Fine-grained invalidation expected)
-# Should be much faster than cold build because only pkg_4 and //:target are re-evaluated.
-echo "=== Running remote download build after change (Fine-grained invalidation expected) ==="
+echo "=== Running remote download build after change ==="
 time "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" build \
   --config=remote \
   --experimental_remote_analysis_cache_mode=download \
   --experimental_remote_analysis_cache_storage=REMOTE \
-  --experimental_skycache_analysis_only=true \
+  --experimental_skycache_analysis_only=false \
   --profile=/tmp/profile_download_remote.json.gz \
-  --nobuild //:target
+  //:target
 
 # Restore the file to avoid polluting the repo for next runs
 git checkout pkg_4/BUILD
-
-# ==================== LOCAL HDD TESTING (COMMENTED OUT) ====================
-# # 6. Clean to reset Skyframe
-# "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" clean
-# 
-# # 7. Upload run (Skyframe is cold)
-# echo "=== Running upload build ==="
-# time "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" build \
-#   --experimental_remote_analysis_cache_mode=upload \
-#   --experimental_remote_analysis_cache_storage=HDD \
-#   --experimental_skycache_analysis_only=true \
-#   --profile=/tmp/profile_upload.json.gz \
-#   --nobuild //:target
-# 
-# # 8. Clean to reset Skyframe (keeps disk cache under outputBase/skycache)
-# echo "=== Cleaning ==="
-# "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" clean
-# 
-# # 9. Download run (Hits expected from Skycache)
-# echo "=== Running download build (Hits expected) ==="
-# time "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" build \
-#   --experimental_remote_analysis_cache_mode=download \
-#   --experimental_remote_analysis_cache_storage=HDD \
-#   --experimental_skycache_analysis_only=true \
-#   --nobuild //:target
-# 
-# # 10. Modify a file (last package to test fine-grained invalidation)
-# echo "=== Modifying pkg_4/BUILD ==="
-# echo "# dirty" >> "$TEST_REPO/pkg_4/BUILD"
-# 
-# # 11. Clean to reset Skyframe
-# "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" clean
-# 
-# # 12. Download run after change (Fine-grained invalidation expected)
-# # Should be much faster than cold build because only pkg_4 and //:target are re-evaluated.
-# echo "=== Running download build after change (Fine-grained invalidation expected) ==="
-# time "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" build \
-#   --experimental_remote_analysis_cache_mode=download \
-#   --experimental_remote_analysis_cache_storage=HDD \
-#   --experimental_skycache_analysis_only=true \
-#   --profile=/tmp/profile_download.json.gz \
-#   --nobuild //:target
-# 
-# # Restore the file to avoid polluting the repo for next runs
-# git checkout pkg_4/BUILD
