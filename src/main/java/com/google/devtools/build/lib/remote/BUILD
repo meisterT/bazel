@@ -94,8 +94,27 @@ java_library(
 
 java_library(
     name = "remote_module",
-    srcs = ["RemoteModule.java"],
+    srcs = [
+        "GrpcFingerprintValueStore.java",
+        "GrpcRemoteAnalysisCachingServicesSupplier.java",
+        "RemoteModule.java",
+    ],
     deps = [
+        "//src/main/java/com/google/devtools/build/lib/skyframe/serialization:fingerprint_value_store",
+        "//src/main/java/com/google/devtools/build/lib/skyframe/serialization:write_statuses",
+        "//src/main/java/com/google/devtools/build/lib/skyframe/serialization:key_bytes_provider",
+        "//src/main/java/com/google/devtools/build/lib/skyframe/serialization:write_status",
+        "//src/main/java/com/google/devtools/build/lib/skyframe/serialization/analysis:remote_analysis_caching_services_supplier",
+        "//src/main/java/com/google/devtools/build/lib/skyframe/serialization/analysis:local_analysis_cache_client",
+        "//src/main/java/com/google/devtools/build/lib/skyframe/serialization/analysis:remote_analysis_cache_client",
+        "//src/main/java/com/google/devtools/build/lib/skyframe/serialization/analysis:remote_analysis_caching_config",
+        "//src/main/java/com/google/devtools/build/lib/skyframe/serialization/analysis:client_id",
+        "//src/main/java/com/google/devtools/build/lib/versioning:long_version_getter",
+        "//src/main/java/com/google/devtools/build/lib/remote/common:action_key",
+        "//src/main/java/com/google/devtools/build/lib/remote/common:cache_not_found_exception",
+        "//src/main/java/com/google/devtools/build/lib/util:serialized_abrupt_exit_exception",
+        "@com_google_protobuf//java/core:lite_runtime_only",
+        "@maven//:com_google_flogger_google_extensions",
         ":ReferenceCountedChannel",
         ":Retrier",
         ":bazel_output_service_cluster",

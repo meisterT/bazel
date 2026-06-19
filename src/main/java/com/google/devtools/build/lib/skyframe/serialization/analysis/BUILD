@@ -332,10 +332,15 @@ java_library(
 
 java_library(
     name = "remote_analysis_caching_services_supplier",
-    srcs = ["RemoteAnalysisCachingServicesSupplier.java"],
+    srcs = [
+        "CommandLifecycleSupplier.java",
+        "DelegatingRemoteAnalysisCachingServicesSupplier.java",
+        "RemoteAnalysisCachingServicesSupplier.java",
+    ],
     deps = [
         ":client_id",
         ":remote_analysis_cache_client",
+        ":remote_analysis_cache_storage_type",
         ":remote_analysis_caching_config",
         ":remote_analysis_metadata_writer",
         "//src/main/java/com/google/devtools/build/lib/runtime:blaze_service",
@@ -536,6 +541,7 @@ java_library(
         "//src/main/java/com/google/devtools/build/lib/versioning:long_version_getter",
         "//src/main/java/com/google/devtools/build/lib/vfs",
         "//src/main/java/com/google/devtools/build/lib/skyframe/serialization/analysis/proto:analysis_cache_service_metadata_status_java_proto",
+        "//src/main/java/com/google/devtools/build/lib/skyframe/serialization/analysis/proto:analysis_cache_service_miss_reason_java_proto",
         "//src/main/protobuf:file_invalidation_data_java_proto",
         "//third_party:flogger",
         "//third_party:guava",

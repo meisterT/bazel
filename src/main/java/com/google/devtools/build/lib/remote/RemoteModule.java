@@ -151,6 +151,8 @@ public final class RemoteModule extends BlazeModule {
   @Nullable private RemoteActionInputFetcher actionInputFetcher;
   @Nullable private RemoteOptions remoteOptions;
   @Nullable private CommandEnvironment env;
+  @Nullable private RemoteCacheClient remoteCacheClient;
+  @Nullable private DigestUtil digestUtil;
   @Nullable private OutputService outputService;
   @Nullable private TempPathGenerator tempPathGenerator;
   @Nullable private BlockWaitingModule blockWaitingModule;
@@ -412,7 +414,8 @@ public final class RemoteModule extends BlazeModule {
 
     AuthAndTLSOptions authAndTlsOptions = env.getOptions().getOptions(AuthAndTLSOptions.class);
     DigestHashFunction hashFn = env.getRuntime().getFileSystem().getDigestFunction();
-    DigestUtil digestUtil = new DigestUtil(env.getXattrProvider(), hashFn);
+    this.digestUtil = new DigestUtil(env.getXattrProvider(), hashFn);
+    DigestUtil digestUtil = this.digestUtil;
 
     boolean verboseFailures = false;
     ExecutionOptions executionOptions = env.getOptions().getOptions(ExecutionOptions.class);
@@ -766,9 +769,10 @@ public final class RemoteModule extends BlazeModule {
       }
     }
 
-    RemoteCacheClient remoteCacheClient =
+    this.remoteCacheClient =
         new GrpcCacheClient(
             cacheChannel.retain(), callCredentialsProvider, remoteOptions, retrier, digestUtil);
+    RemoteCacheClient remoteCacheClient = this.remoteCacheClient;
     cacheChannel.release();
     DiskCacheClient diskCacheClient = null;
 
@@ -1047,10 +1051,22 @@ public final class RemoteModule extends BlazeModule {
     actionInputFetcher = null;
     remoteOptions = null;
     env = null;
+    remoteCacheClient = null;
+    digestUtil = null;
     outputService = null;
     tempPathGenerator = null;
     rpcLogFile = null;
     remoteOutputChecker = null;
+  }
+
+  @Nullable
+  public RemoteCacheClient getRemoteCacheClient() {
+    return remoteCacheClient;
+  }
+
+  @Nullable
+  public DigestUtil getDigestUtil() {
+    return digestUtil;
   }
 
   private static void afterCommandTask(

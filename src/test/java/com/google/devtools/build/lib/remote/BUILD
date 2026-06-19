@@ -73,6 +73,8 @@ java_library(
         ],
     ),
     deps = [
+        "//src/main/java/com/google/devtools/build/lib/skyframe/serialization:key_bytes_provider",
+        "//src/main/java/com/google/devtools/build/lib/skyframe/serialization:write_status",
         ":action_input_prefetcher_test_base",
         ":remote_action_file_system_test_base",
         "//src/main/java/com/google/devtools/build/lib/actions",

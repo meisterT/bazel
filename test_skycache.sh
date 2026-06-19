@@ -19,6 +19,15 @@ echo "=== Generating slow repo ==="
 rm -rf "$TEST_REPO"
 python3 generate_slow_repo.py
 
+# Write .bazelrc for remote caching
+echo "=== Writing .bazelrc ==="
+cat << 'EOF' > "$TEST_REPO/.bazelrc"
+build:remote --remote_instance_name=projects/bazel-untrusted/instances/default_instance
+build:remote --remote_cache=grpcs://remotebuildexecution.googleapis.com
+build:remote --remote_timeout=600
+build:remote --google_default_credentials
+EOF
+
 cd "$TEST_REPO"
 
 # 3. Warm up Bzlmod and external repos
@@ -29,7 +38,7 @@ rm -rf "$OUTPUT_BASE/skycache"
 # Initialize git after warmup so generated MODULE.bazel and MODULE.bazel.lock are tracked
 git init
 git config user.name "Test"
-git config user.email "test@example.com"
+git config config.email "test@example.com" || git config user.email "test@example.com"
 git add .
 git commit -m "initial commit"
 
@@ -43,27 +52,31 @@ time "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" bu
   --profile=/tmp/profile_vanilla.json.gz \
   --nobuild //:target
 
+# ==================== REMOTE CACHE TESTING ====================
+
 # 6. Clean to reset Skyframe
 "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" clean
 
 # 7. Upload run (Skyframe is cold)
-echo "=== Running upload build ==="
+echo "=== Running remote upload build ==="
 time "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" build \
+  --config=remote \
   --experimental_remote_analysis_cache_mode=upload \
-  --experimental_remote_analysis_cache_storage=HDD \
+  --experimental_remote_analysis_cache_storage=REMOTE \
   --experimental_skycache_analysis_only=true \
-  --profile=/tmp/profile_upload.json.gz \
+  --profile=/tmp/profile_upload_remote.json.gz \
   --nobuild //:target
 
-# 8. Clean to reset Skyframe (keeps disk cache under outputBase/skycache)
+# 8. Clean to reset Skyframe (forces download next run)
 echo "=== Cleaning ==="
 "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" clean
 
 # 9. Download run (Hits expected from Skycache)
-echo "=== Running download build (Hits expected) ==="
+echo "=== Running remote download build (Hits expected) ==="
 time "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" build \
+  --config=remote \
   --experimental_remote_analysis_cache_mode=download \
-  --experimental_remote_analysis_cache_storage=HDD \
+  --experimental_remote_analysis_cache_storage=REMOTE \
   --experimental_skycache_analysis_only=true \
   --nobuild //:target
 
@@ -76,13 +89,59 @@ echo "# dirty" >> "$TEST_REPO/pkg_4/BUILD"
 
 # 12. Download run after change (Fine-grained invalidation expected)
 # Should be much faster than cold build because only pkg_4 and //:target are re-evaluated.
-echo "=== Running download build after change (Fine-grained invalidation expected) ==="
+echo "=== Running remote download build after change (Fine-grained invalidation expected) ==="
 time "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" build \
+  --config=remote \
   --experimental_remote_analysis_cache_mode=download \
-  --experimental_remote_analysis_cache_storage=HDD \
+  --experimental_remote_analysis_cache_storage=REMOTE \
   --experimental_skycache_analysis_only=true \
-  --profile=/tmp/profile_download.json.gz \
+  --profile=/tmp/profile_download_remote.json.gz \
   --nobuild //:target
 
 # Restore the file to avoid polluting the repo for next runs
 git checkout pkg_4/BUILD
+
+# ==================== LOCAL HDD TESTING (COMMENTED OUT) ====================
+# # 6. Clean to reset Skyframe
+# "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" clean
+# 
+# # 7. Upload run (Skyframe is cold)
+# echo "=== Running upload build ==="
+# time "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" build \
+#   --experimental_remote_analysis_cache_mode=upload \
+#   --experimental_remote_analysis_cache_storage=HDD \
+#   --experimental_skycache_analysis_only=true \
+#   --profile=/tmp/profile_upload.json.gz \
+#   --nobuild //:target
+# 
+# # 8. Clean to reset Skyframe (keeps disk cache under outputBase/skycache)
+# echo "=== Cleaning ==="
+# "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" clean
+# 
+# # 9. Download run (Hits expected from Skycache)
+# echo "=== Running download build (Hits expected) ==="
+# time "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" build \
+#   --experimental_remote_analysis_cache_mode=download \
+#   --experimental_remote_analysis_cache_storage=HDD \
+#   --experimental_skycache_analysis_only=true \
+#   --nobuild //:target
+# 
+# # 10. Modify a file (last package to test fine-grained invalidation)
+# echo "=== Modifying pkg_4/BUILD ==="
+# echo "# dirty" >> "$TEST_REPO/pkg_4/BUILD"
+# 
+# # 11. Clean to reset Skyframe
+# "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" clean
+# 
+# # 12. Download run after change (Fine-grained invalidation expected)
+# # Should be much faster than cold build because only pkg_4 and //:target are re-evaluated.
+# echo "=== Running download build after change (Fine-grained invalidation expected) ==="
+# time "$BAZEL_DEV" --install_base="$INSTALL_BASE" --output_base="$OUTPUT_BASE" build \
+#   --experimental_remote_analysis_cache_mode=download \
+#   --experimental_remote_analysis_cache_storage=HDD \
+#   --experimental_skycache_analysis_only=true \
+#   --profile=/tmp/profile_download.json.gz \
+#   --nobuild //:target
+# 
+# # Restore the file to avoid polluting the repo for next runs
+# git checkout pkg_4/BUILD

@@ -13,20 +13,13 @@
 // limitations under the License.
 package com.google.devtools.build.lib.skyframe.serialization.analysis;
 
-import com.google.devtools.build.lib.skybridge.SkybridgeInterface;
-
-/** The storage type for the remote analysis cache. */
-@SkybridgeInterface
-public enum RemoteAnalysisCacheStorageType {
-  /** Write to RAM. */
-  RAM,
-
-  /** Write to HDD. */
-  HDD,
-
-  /** Write to both RAM and HDD. */
-  BOTH,
-
-  /** Write to remote CAS/AC. */
-  REMOTE
+/** Interface for suppliers that need to listen to command lifecycle events. */
+public interface CommandLifecycleSupplier {
+  /**
+   * Called before a command starts.
+   *
+   * @param env the CommandEnvironment object (passed as Object to avoid dependency on runtime
+   *     package).
+   */
+  void beforeCommand(Object env);
 }

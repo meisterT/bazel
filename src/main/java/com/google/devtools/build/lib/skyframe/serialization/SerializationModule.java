@@ -29,6 +29,8 @@ import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnaly
 import com.google.devtools.build.lib.skyframe.serialization.analysis.LocalAnalysisCacheClient;
 import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCacheClient;
 import com.google.devtools.build.lib.skyframe.serialization.analysis.LongVersionGetterTestInjection;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.CommandLifecycleSupplier;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.DelegatingRemoteAnalysisCachingServicesSupplier;
 import com.google.devtools.build.lib.util.TestType;
 import com.google.devtools.build.lib.versioning.ContentHashVersionGetter;
 import com.google.devtools.build.lib.versioning.LongVersionGetter;
@@ -42,7 +44,6 @@ public class SerializationModule extends BlazeModule {
 
   private BlazeDirectories directories;
   private RemoteAnalysisCachingServicesSupplier remoteAnalysisCachingServicesSupplier;
-  @Nullable private PersistentRemoteAnalysisCachingServicesSupplier supplier;
 
   @Override
   public void workspaceInit(
@@ -60,9 +61,6 @@ public class SerializationModule extends BlazeModule {
         getAnalysisCodecRegistrySupplier(runtime, directories));
 
     this.remoteAnalysisCachingServicesSupplier = getAnalysisCachingServicesSupplier(runtime);
-    if (this.remoteAnalysisCachingServicesSupplier instanceof PersistentRemoteAnalysisCachingServicesSupplier) {
-      this.supplier = (PersistentRemoteAnalysisCachingServicesSupplier) this.remoteAnalysisCachingServicesSupplier;
-    }
     builder.setRemoteAnalysisCachingServicesSupplier(this.remoteAnalysisCachingServicesSupplier);
     builder.setFingerprinterForAnalysisCaching(getFingerprinterForAnalysisCaching());
   }
@@ -76,8 +74,8 @@ public class SerializationModule extends BlazeModule {
       versionGetter = new ContentHashVersionGetter();
     }
     env.setVersionGetter(versionGetter);
-    if (this.supplier != null) {
-      this.supplier.beforeCommand(env);
+    if (this.remoteAnalysisCachingServicesSupplier instanceof CommandLifecycleSupplier) {
+      ((CommandLifecycleSupplier) this.remoteAnalysisCachingServicesSupplier).beforeCommand(env);
     }
   }
 
@@ -111,7 +109,10 @@ public class SerializationModule extends BlazeModule {
   @ForOverride
   protected RemoteAnalysisCachingServicesSupplier getAnalysisCachingServicesSupplier(
       BlazeRuntime runtime) {
-    return new PersistentRemoteAnalysisCachingServicesSupplier(this.directories);
+    RemoteAnalysisCachingServicesSupplier remoteSupplier =
+        runtime.getBlazeService(RemoteAnalysisCachingServicesSupplier.class);
+    return new DelegatingRemoteAnalysisCachingServicesSupplier(
+        new PersistentRemoteAnalysisCachingServicesSupplier(this.directories), remoteSupplier);
   }
 
   @ForOverride
@@ -121,7 +122,7 @@ public class SerializationModule extends BlazeModule {
 
   /** A supplier that uses a persistent disk fingerprint value store. */
   private static final class PersistentRemoteAnalysisCachingServicesSupplier
-      implements RemoteAnalysisCachingServicesSupplier {
+      implements RemoteAnalysisCachingServicesSupplier, CommandLifecycleSupplier {
     private final BlazeDirectories directories;
     @Nullable private FingerprintValueStore store;
     @Nullable private ListenableFuture<? extends FingerprintValueStore> storeFuture;
@@ -133,8 +134,9 @@ public class SerializationModule extends BlazeModule {
       this.directories = directories;
     }
 
-    public void beforeCommand(CommandEnvironment env) {
-      this.env = env;
+    @Override
+    public void beforeCommand(Object env) {
+      this.env = (CommandEnvironment) env;
       if (client != null) {
         client.clearValidationCache();
       }

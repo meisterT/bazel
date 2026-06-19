@@ -1358,18 +1358,23 @@ public class BuildTool {
 
     // totalRequests is already checked to be non-zero above.
     double overallHitRate = (double) totalHits / totalRequests * 100;
+    String missesByReasonStr =
+        listener.getMissesByReason().entrySet().stream()
+            .map(entry -> entry.getKey().name() + ": " + entry.getValue().get())
+            .collect(joining(", "));
     env.getReporter()
         .handle(
             Event.info(
                 String.format(
                     "Skycache stats: %s received in %s requests, %s/%s cache"
-                        + " hits (%.2f%%) [Breakdown: %s]",
+                        + " hits (%.2f%%) [Breakdown: %s] [Miss reasons: %s]",
                     formatBytes(bytesReceived),
                     requests,
                     totalHits,
                     totalRequests,
                     overallHitRate,
-                    statsByFunction)));
+                    statsByFunction,
+                    missesByReasonStr)));
   }
 
   /** Formats a number of bytes in a human-readable prefixed format. */

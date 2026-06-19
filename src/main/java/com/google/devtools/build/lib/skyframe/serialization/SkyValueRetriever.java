@@ -208,7 +208,12 @@ public final class SkyValueRetriever {
             try {
               result = getDone(futureResult);
             } catch (ExecutionException e) {
-              throw new SerializationException("getting cache response for " + key, e);
+              Throwable cause = e.getCause();
+              MissReason reason =
+                  cause instanceof SerializationException se
+                      ? se.getReason()
+                      : MissReason.MISS_REASON_INFRA_FAILURE;
+              throw new SerializationException("getting cache response for " + key, cause, reason);
             }
             if (result.value().length == 0) {
               var missReason = MissReason.forNumber(result.missReason());

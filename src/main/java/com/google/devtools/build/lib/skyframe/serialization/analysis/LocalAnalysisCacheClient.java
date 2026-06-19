@@ -33,6 +33,7 @@ import java.util.List;
 import com.google.devtools.build.lib.skyframe.serialization.FingerprintValueStore;
 import com.google.devtools.build.lib.skyframe.serialization.PackedFingerprint;
 import com.google.devtools.build.lib.skyframe.serialization.proto.DataType;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.proto.MissReason;
 import com.google.devtools.build.lib.skyframe.serialization.analysis.proto.TopLevelTargetsMatchStatus;
 import com.google.protobuf.CodedInputStream;
 import java.util.Arrays;
@@ -99,7 +100,7 @@ public class LocalAnalysisCacheClient implements RemoteAnalysisCacheClient {
         bytes -> {
           if (bytes == null || bytes.length == 0) {
             logger.atFine().log("LocalAnalysisCacheClient.lookup MISS in store for key: %s", cacheKey);
-            return immediateFuture(new LookupResult(new byte[0])); // Miss
+            return immediateFuture(new LookupResult(new byte[0], MissReason.MISS_REASON_SKYVALUE_MISS.getNumber()));
           }
           logger.atFine().log("LocalAnalysisCacheClient.lookup HIT in store for key: %s, size: %d", cacheKey, bytes.length);
 
@@ -148,7 +149,7 @@ public class LocalAnalysisCacheClient implements RemoteAnalysisCacheClient {
                   cacheHits.incrementAndGet();
                   return new LookupResult(valBytes);
                 } else {
-                  return new LookupResult(new byte[0]); // Miss due to invalidation
+                  return new LookupResult(new byte[0], MissReason.MISS_REASON_INVALIDATED.getNumber());
                 }
               },
               directExecutor());

@@ -265,6 +265,7 @@ java_library(
         "//src/main/java/com/google/devtools/build/lib/unix:native_posix_files_service_impl",
         "//src/main/java/com/google/devtools/build/lib/unix:process_utils_service_impl",
         "//src/main/java/com/google/devtools/build/lib/util:server_log_path_service_impl",
+        "//src/main/java/com/google/devtools/build/lib/remote:remote_module",
         "//third_party:guava",
     ],
 )
