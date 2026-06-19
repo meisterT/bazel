@@ -26,6 +26,9 @@ build:remote --remote_instance_name=projects/bazel-untrusted/instances/default_i
 build:remote --remote_cache=grpcs://remotebuildexecution.googleapis.com
 build:remote --remote_timeout=600
 build:remote --google_default_credentials
+build:remote --remote_default_exec_properties=dockerNetwork=standard
+build:remote --remote_default_exec_properties=dockerPrivileged=true
+build:remote --remote_default_exec_properties=Pool=default
 EOF
 
 cd "$TEST_REPO"
