@@ -13,7 +13,10 @@ filegroup(
 
 java_library(
     name = "long_version_getter",
-    srcs = ["LongVersionGetter.java"],
+    srcs = [
+        "LongVersionGetter.java",
+        "MtimeVersionGetter.java",
+    ],
     deps = [
         "//src/main/java/com/google/devtools/build/lib/vfs",
     ],

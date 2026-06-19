@@ -22,6 +22,8 @@ import com.google.devtools.build.lib.skyframe.PackageFunction.ActionOnFilesystem
 import com.google.devtools.build.lib.skyframe.PackageFunction.ActionOnIOExceptionReadingBuildFile;
 import com.google.devtools.build.lib.skyframe.PackageLookupFunction.CrossRepositoryLabelViolationStrategy;
 import com.google.devtools.build.lib.skyframe.SkyframeExecutor.DiffCheckNotificationOptions;
+import com.google.devtools.build.skyframe.BazelInMemoryGraphImpl;
+import com.google.devtools.build.skyframe.InMemoryGraph;
 import com.google.devtools.common.options.OptionsProvider;
 import java.time.Duration;
 
@@ -73,6 +75,11 @@ public class BazelSkyframeExecutorConstants {
         .setShouldUseRepoDotBazel(USE_REPO_DOT_BAZEL)
         .setCrossRepositoryLabelViolationStrategy(CROSS_REPOSITORY_LABEL_VIOLATION_STRATEGY)
         .setBuildFilesByPriority(BUILD_FILES_BY_PRIORITY)
-        .setDiffCheckNotificationOptions(DIFF_CHECK_NOTIFICATION_OPTIONS);
+        .setDiffCheckNotificationOptions(DIFF_CHECK_NOTIFICATION_OPTIONS)
+        .setGraphFactory(
+            (keepEdges, usePooledInterning) ->
+                keepEdges
+                    ? new BazelInMemoryGraphImpl(usePooledInterning)
+                    : InMemoryGraph.createEdgeless(usePooledInterning));
   }
 }

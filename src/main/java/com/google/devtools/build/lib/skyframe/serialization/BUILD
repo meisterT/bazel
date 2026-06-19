@@ -61,12 +61,22 @@ java_library(
     name = "serialization_module",
     srcs = ["SerializationModule.java"],
     deps = [
+        ":disk_fingerprint_value_store",
         ":fingerprint_value_store",
         ":serialization",
         ":serialization_registry_setup_helpers",
         "//src/main/java/com/google/devtools/build/lib/analysis:blaze_directories",
         "//src/main/java/com/google/devtools/build/lib/runtime:blaze_command_cluster",
+        "//src/main/java/com/google/devtools/build/lib/skyframe/serialization/analysis:client_id",
+        "//src/main/java/com/google/devtools/build/lib/skyframe/serialization/analysis:local_analysis_cache_client",
+        "//src/main/java/com/google/devtools/build/lib/skyframe/serialization/analysis:remote_analysis_cache_client",
+        "//src/main/java/com/google/devtools/build/lib/skyframe/serialization/analysis:remote_analysis_cache_mode",
+        "//src/main/java/com/google/devtools/build/lib/skyframe/serialization/analysis:remote_analysis_cache_storage_type",
+        "//src/main/java/com/google/devtools/build/lib/skyframe/serialization/analysis:remote_analysis_caching_config",
         "//src/main/java/com/google/devtools/build/lib/skyframe/serialization/analysis:remote_analysis_caching_services_supplier",
+        "//src/main/java/com/google/devtools/build/lib/util:serialized_abrupt_exit_exception",
+        "//src/main/java/com/google/devtools/build/lib/versioning:long_version_getter",
+        "//src/main/java/com/google/devtools/build/lib/vfs",
         "//third_party:error_prone_annotations",
         "//third_party:guava",
     ],
@@ -102,6 +112,7 @@ java_library(
             "CodecScanningConstants.java",
             "DependOnFutureShim.java",
             "DeserializedSkyValue.java",
+            "DiskFingerprintValueStore.java",
             "ErrorMessageHelper.java",
             "FingerprintValueStore.java",
             "FrontierNodeVersion.java",
@@ -268,3 +279,18 @@ java_library(
         "//src/main/java/com/google/devtools/build/lib/skybridge:skybridge_interface",
     ],
 )
+
+java_library(
+    name = "disk_fingerprint_value_store",
+    srcs = ["DiskFingerprintValueStore.java"],
+    visibility = ["//src:__subpackages__"],
+    deps = [
+        ":fingerprint_value_store",
+        ":key_bytes_provider",
+        ":write_status",
+        "//src/main/java/com/google/devtools/build/lib/vfs",
+        "//third_party:error_prone_annotations",
+        "//third_party:guava",
+    ],
+)
+

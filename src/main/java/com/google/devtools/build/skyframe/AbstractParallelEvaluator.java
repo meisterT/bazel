@@ -56,6 +56,7 @@ import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import javax.annotation.Nullable;
 
@@ -120,7 +121,8 @@ abstract class AbstractParallelEvaluator {
       GraphInconsistencyReceiver graphInconsistencyReceiver,
       QuiescingExecutor executor,
       CycleDetector cycleDetector,
-      Predicate<SkyKey> keepGoing) {
+      Predicate<SkyKey> keepGoing,
+      Function<SkyKey, byte[]> keySerializer) {
     this.graph = graph;
     this.cycleDetector = cycleDetector;
     this.evaluatorContext =
@@ -138,7 +140,8 @@ abstract class AbstractParallelEvaluator {
             executor,
             () -> new NodeEntryVisitor(executor, progressReceiver, Evaluate::new, stateCache),
             stateCache,
-            keepGoing);
+            keepGoing,
+            keySerializer);
   }
 
   /**

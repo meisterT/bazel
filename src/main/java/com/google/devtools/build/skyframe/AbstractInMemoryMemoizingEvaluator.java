@@ -150,7 +150,7 @@ public abstract class AbstractInMemoryMemoizingEvaluator implements MemoizingEva
         invalidate(valuesToInject.keySet());
 
         performInvalidation();
-        injectValues(graphVersion);
+        injectValues(graphVersion, evaluationContext.getKeySerializer());
       }
       ProcessableGraph graph = getGraphForEvaluation(evaluationContext);
 
@@ -180,7 +180,8 @@ public abstract class AbstractInMemoryMemoizingEvaluator implements MemoizingEva
                     ? new SimpleCycleDetector(evaluationContext.storeExactCycles())
                     : new ShortCircuitingCycleDetector(evaluationContext.getParallelism()),
                 evaluationContext.getUnnecessaryTemporaryStateDropperReceiver(),
-                getKeepGoingPredicate(evaluationContext));
+                getKeepGoingPredicate(evaluationContext),
+                evaluationContext.getKeySerializer());
         result = evaluator.eval(roots);
       }
       return EvaluationResult.<T>builder()
@@ -467,12 +468,12 @@ public abstract class AbstractInMemoryMemoizingEvaluator implements MemoizingEva
   }
 
   /** Injects values in {@code valuesToInject} into the graph. */
-  private void injectValues(Version version) {
+  private void injectValues(Version version, @Nullable java.util.function.Function<SkyKey, byte[]> keySerializer) {
     if (valuesToInject.isEmpty()) {
       return;
     }
     try {
-      ParallelEvaluator.injectValues(valuesToInject, version, getInMemoryGraph(), progressReceiver);
+      ParallelEvaluator.injectValues(valuesToInject, version, getInMemoryGraph(), progressReceiver, keySerializer);
     } catch (InterruptedException e) {
       throw new IllegalStateException("InMemoryGraph doesn't throw interrupts", e);
     }

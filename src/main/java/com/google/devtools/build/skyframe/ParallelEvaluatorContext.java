@@ -26,6 +26,7 @@ import com.google.devtools.build.lib.events.Reportable;
 import com.google.devtools.build.skyframe.QueryableGraph.Reason;
 import com.google.devtools.build.skyframe.SkyFunction.Environment.SkyKeyComputeState;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
 /**
@@ -52,6 +53,7 @@ class ParallelEvaluatorContext {
   private final GraphInconsistencyReceiver graphInconsistencyReceiver;
   private final QuiescingExecutor executor;
   private final Cache<SkyKey, SkyKeyComputeState> stateCache;
+  private final Function<SkyKey, byte[]> keySerializer;
 
   /**
    * The visitor managing the thread pool. Used to enqueue parents when an entry is finished, and,
@@ -80,7 +82,8 @@ class ParallelEvaluatorContext {
       QuiescingExecutor executor,
       Supplier<NodeEntryVisitor> visitorSupplier,
       Cache<SkyKey, SkyKeyComputeState> stateCache,
-      Predicate<SkyKey> keepGoing) {
+      Predicate<SkyKey> keepGoing,
+      Function<SkyKey, byte[]> keySerializer) {
     this.graph = graph;
     this.graphVersion = graphVersion;
     this.minimalVersion = minimalVersion;
@@ -98,6 +101,7 @@ class ParallelEvaluatorContext {
     this.visitorSupplier = Suppliers.memoize(visitorSupplier);
     this.stateCache = stateCache;
     this.keepGoing = keepGoing;
+    this.keySerializer = keySerializer;
   }
 
   /**
@@ -188,6 +192,10 @@ class ParallelEvaluatorContext {
 
   Cache<SkyKey, SkyKeyComputeState> stateCache() {
     return stateCache;
+  }
+
+  Function<SkyKey, byte[]> getKeySerializer() {
+    return keySerializer;
   }
 
   /** Receives the events from the NestedSet and delegates to the reporter. */

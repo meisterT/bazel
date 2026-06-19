@@ -111,6 +111,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.BiFunction;
+import com.google.devtools.build.skyframe.InMemoryGraph;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -143,6 +145,8 @@ public class SequencedSkyframeExecutor extends SkyframeExecutor {
   private boolean evaluatorNeedsReset = false;
   private boolean lastCommandKeptState = false;
   private boolean needGcAfterResettingEvaluator = false;
+
+  private final BiFunction<Boolean, Boolean, InMemoryGraph> graphFactory;
 
   private final AtomicInteger outputDirtyFiles = new AtomicInteger();
   private final ArrayBlockingQueue<String> outputDirtyFilesExecPathSample =
@@ -178,7 +182,8 @@ public class SequencedSkyframeExecutor extends SkyframeExecutor {
       SkyKeyStateReceiver skyKeyStateReceiver,
       BugReporter bugReporter,
       boolean globUnderSingleDep,
-      Optional<DiffCheckNotificationOptions> diffCheckNotificationOptions) {
+      Optional<DiffCheckNotificationOptions> diffCheckNotificationOptions,
+      BiFunction<Boolean, Boolean, InMemoryGraph> graphFactory) {
     super(
         skyframeExecutorConsumerOnInit,
         pkgFactory,
@@ -207,6 +212,7 @@ public class SequencedSkyframeExecutor extends SkyframeExecutor {
         repoContentsCachePathSupplier,
         globUnderSingleDep,
         diffCheckNotificationOptions);
+    this.graphFactory = graphFactory;
   }
 
   @Override
@@ -228,7 +234,7 @@ public class SequencedSkyframeExecutor extends SkyframeExecutor {
         trackIncrementalState ? DEFAULT_EVENT_FILTER_WITH_ACTIONS : EventFilter.NO_STORAGE,
         emittedEventState,
         trackIncrementalState,
-        /* usePooledInterning= */ true);
+        graphFactory.apply(trackIncrementalState, /* usePooledInterning= */ true));
   }
 
   @Override
@@ -862,6 +868,11 @@ public class SequencedSkyframeExecutor extends SkyframeExecutor {
     private SyscallCache syscallCache = null;
     private boolean globUnderSingleDep = true;
     private DiffCheckNotificationOptions diffCheckNotificationOptions;
+    private BiFunction<Boolean, Boolean, InMemoryGraph> graphFactory =
+        (keepEdges, usePooledInterning) ->
+            keepEdges
+                ? InMemoryGraph.create(usePooledInterning)
+                : InMemoryGraph.createEdgeless(usePooledInterning);
 
     private Builder() {}
 
@@ -900,7 +911,8 @@ public class SequencedSkyframeExecutor extends SkyframeExecutor {
               skyKeyStateReceiver,
               bugReporter,
               globUnderSingleDep,
-              Optional.ofNullable(diffCheckNotificationOptions));
+              Optional.ofNullable(diffCheckNotificationOptions),
+              graphFactory);
       skyframeExecutor.init();
       return skyframeExecutor;
     }
@@ -1042,6 +1054,12 @@ public class SequencedSkyframeExecutor extends SkyframeExecutor {
     public Builder setDiffCheckNotificationOptions(
         DiffCheckNotificationOptions diffCheckNotificationOptions) {
       this.diffCheckNotificationOptions = diffCheckNotificationOptions;
+      return this;
+    }
+
+    @CanIgnoreReturnValue
+    public Builder setGraphFactory(BiFunction<Boolean, Boolean, InMemoryGraph> graphFactory) {
+      this.graphFactory = graphFactory;
       return this;
     }
   }

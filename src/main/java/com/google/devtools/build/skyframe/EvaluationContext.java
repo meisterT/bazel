@@ -21,6 +21,7 @@ import com.google.devtools.build.lib.events.ExtendedEventHandler;
 import com.google.devtools.build.skyframe.WalkableGraph.WalkableGraphFactory;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.util.Optional;
+import java.util.function.Function;
 import javax.annotation.Nullable;
 
 /**
@@ -38,6 +39,7 @@ public class EvaluationContext {
   private final UnnecessaryTemporaryStateDropperReceiver unnecessaryTemporaryStateDropperReceiver;
 
   private final boolean detectCycles;
+  private final Function<SkyKey, byte[]> keySerializer;
 
   protected EvaluationContext(
       int parallelism,
@@ -48,7 +50,8 @@ public class EvaluationContext {
       boolean mergingSkyframeAnalysisExecutionPhases,
       boolean storeExactCycles,
       UnnecessaryTemporaryStateDropperReceiver unnecessaryTemporaryStateDropperReceiver,
-      boolean detectCycles) {
+      boolean detectCycles,
+      Function<SkyKey, byte[]> keySerializer) {
     this.parallelism = parallelism;
     this.executor = executor;
     this.keepGoing = keepGoing;
@@ -58,6 +61,7 @@ public class EvaluationContext {
     this.storeExactCycles = storeExactCycles;
     this.unnecessaryTemporaryStateDropperReceiver = unnecessaryTemporaryStateDropperReceiver;
     this.detectCycles = detectCycles;
+    this.keySerializer = keySerializer;
   }
 
   public int getParallelism() {
@@ -128,6 +132,10 @@ public class EvaluationContext {
     return detectCycles;
   }
 
+  public Function<SkyKey, byte[]> getKeySerializer() {
+    return keySerializer;
+  }
+
   public Builder builder() {
     return newBuilder().copyFrom(this);
   }
@@ -149,6 +157,7 @@ public class EvaluationContext {
         UnnecessaryTemporaryStateDropperReceiver.NULL;
 
     protected boolean detectCycles = true;
+    protected Function<SkyKey, byte[]> keySerializer = k -> new byte[0];
 
     protected Builder() {}
 
@@ -165,6 +174,7 @@ public class EvaluationContext {
       this.unnecessaryTemporaryStateDropperReceiver =
           evaluationContext.unnecessaryTemporaryStateDropperReceiver;
       this.detectCycles = evaluationContext.detectCycles;
+      this.keySerializer = evaluationContext.keySerializer;
       return this;
     }
 
@@ -224,6 +234,12 @@ public class EvaluationContext {
       return this;
     }
 
+    @CanIgnoreReturnValue
+    public Builder setKeySerializer(Function<SkyKey, byte[]> keySerializer) {
+      this.keySerializer = keySerializer;
+      return this;
+    }
+
     public EvaluationContext build() {
       return new EvaluationContext(
           parallelism,
@@ -234,7 +250,8 @@ public class EvaluationContext {
           mergingSkyframeAnalysisExecutionPhases,
           storeExactCycles,
           unnecessaryTemporaryStateDropperReceiver,
-          detectCycles);
+          detectCycles,
+          keySerializer);
     }
   }
 }

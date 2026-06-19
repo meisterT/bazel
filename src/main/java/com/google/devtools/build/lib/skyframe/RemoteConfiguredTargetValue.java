@@ -57,9 +57,16 @@ public sealed class RemoteConfiguredTargetValue
   @Nullable // Null after clearing.
   private TargetData targetData;
 
-  private RemoteConfiguredTargetValue(ConfiguredTarget configuredTarget, TargetData targetData) {
+  @Nullable
+  private NestedSet<Package.Metadata> transitivePackages;
+
+  private RemoteConfiguredTargetValue(
+      ConfiguredTarget configuredTarget,
+      TargetData targetData,
+      @Nullable NestedSet<Package.Metadata> transitivePackages) {
     this.configuredTarget = configuredTarget;
     this.targetData = targetData;
+    this.transitivePackages = transitivePackages;
   }
 
   @Nullable // Null after clearing everything.
@@ -68,10 +75,10 @@ public sealed class RemoteConfiguredTargetValue
     return configuredTarget;
   }
 
-  @Nullable // Never serialized.
+  @Nullable
   @Override
   public final NestedSet<Package.Metadata> getTransitivePackages() {
-    return null;
+    return transitivePackages;
   }
 
   @Override
@@ -80,6 +87,7 @@ public sealed class RemoteConfiguredTargetValue
       configuredTarget = null;
       targetData = null;
     }
+    transitivePackages = null;
   }
 
   @Override
@@ -106,8 +114,10 @@ public sealed class RemoteConfiguredTargetValue
     private final ImmutableList<ActionAnalysisMetadata> actions;
 
     RemoteRuleConfiguredTargetValue(
-        RuleConfiguredTarget ruleConfiguredTarget, TargetData targetData) {
-      super(ruleConfiguredTarget, targetData);
+        RuleConfiguredTarget ruleConfiguredTarget,
+        TargetData targetData,
+        @Nullable NestedSet<Package.Metadata> transitivePackages) {
+      super(ruleConfiguredTarget, targetData, transitivePackages);
       this.actions = ruleConfiguredTarget.getActions();
     }
 
@@ -164,6 +174,7 @@ public sealed class RemoteConfiguredTargetValue
               "tried to serialize a cleared ConfiguredTargetValue? %s",
               obj);
       context.serialize(configuredTarget, codedOut);
+      context.serialize(obj.getTransitivePackages(), codedOut);
       if (obj instanceof RemoteConfiguredTargetValue value) {
         context.serialize(value.targetData, codedOut);
         return;
@@ -199,6 +210,7 @@ public sealed class RemoteConfiguredTargetValue
         throws SerializationException, IOException {
       var value = new DeserializationBuilder();
       context.deserialize(codedIn, value, DeserializationBuilder::setConfiguredTarget);
+      context.deserialize(codedIn, value, DeserializationBuilder::setTransitivePackages);
       context.deserialize(codedIn, value, DeserializationBuilder::setTargetData);
       return value;
     }
@@ -206,6 +218,7 @@ public sealed class RemoteConfiguredTargetValue
     private static class DeserializationBuilder
         implements DeferredValue<RemoteConfiguredTargetValue> {
       private ConfiguredTarget configuredTarget;
+      private NestedSet<Package.Metadata> transitivePackages;
       private TargetData targetData;
 
       @Override
@@ -213,12 +226,16 @@ public sealed class RemoteConfiguredTargetValue
         checkNotNull(configuredTarget);
         checkNotNull(targetData);
         return configuredTarget instanceof RuleConfiguredTarget ruleConfiguredTarget
-            ? new RemoteRuleConfiguredTargetValue(ruleConfiguredTarget, targetData)
-            : new RemoteConfiguredTargetValue(configuredTarget, targetData);
+            ? new RemoteRuleConfiguredTargetValue(ruleConfiguredTarget, targetData, transitivePackages)
+            : new RemoteConfiguredTargetValue(configuredTarget, targetData, transitivePackages);
       }
 
       private static void setConfiguredTarget(DeserializationBuilder builder, Object value) {
         builder.configuredTarget = (ConfiguredTarget) value;
+      }
+
+      private static void setTransitivePackages(DeserializationBuilder builder, Object value) {
+        builder.transitivePackages = (NestedSet<Package.Metadata>) value;
       }
 
       private static void setTargetData(DeserializationBuilder builder, Object value) {

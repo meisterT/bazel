@@ -78,6 +78,28 @@ public final class InMemoryMemoizingEvaluator extends AbstractInMemoryMemoizingE
             : InMemoryGraph.createEdgeless(usePooledInterning);
   }
 
+  public InMemoryMemoizingEvaluator(
+      Map<SkyFunctionName, SkyFunction> skyFunctions,
+      Differencer differencer,
+      EvaluationProgressReceiver progressReceiver,
+      GraphInconsistencyReceiver graphInconsistencyReceiver,
+      EventFilter eventFilter,
+      EmittedEventState emittedEventState,
+      boolean keepEdges,
+      InMemoryGraph graph) {
+    super(
+        ImmutableMap.copyOf(skyFunctions),
+        differencer,
+        new DirtyAndInflightTrackingProgressReceiver(progressReceiver),
+        eventFilter,
+        emittedEventState,
+        graphInconsistencyReceiver,
+        keepEdges,
+        Version.minimal());
+    this.graph = graph;
+  }
+
+
   @Override
   public void injectGraphTransformerForTesting(GraphTransformerForTesting transformer) {
     checkState(TestType.isInTest());

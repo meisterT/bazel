@@ -19,15 +19,28 @@ import com.google.common.util.concurrent.ListenableFuture;
 import com.google.devtools.build.lib.analysis.BlazeDirectories;
 import com.google.devtools.build.lib.runtime.BlazeModule;
 import com.google.devtools.build.lib.runtime.BlazeRuntime;
+import com.google.devtools.build.lib.runtime.CommandEnvironment;
 import com.google.devtools.build.lib.runtime.WorkspaceBuilder;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.ClientId;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCacheMode;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCacheStorageType;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCachingConfig;
 import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCachingServicesSupplier;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.GitWorkspaceState;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.LocalAnalysisCacheClient;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCacheClient;
+import com.google.devtools.build.lib.versioning.MtimeVersionGetter;
+import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
 import com.google.errorprone.annotations.ForOverride;
 import java.util.function.Supplier;
+import javax.annotation.Nullable;
 
 /** A {@link BlazeModule} to store Skyframe serialization lifecycle hooks. */
 public class SerializationModule extends BlazeModule {
 
+  private BlazeDirectories directories;
   private RemoteAnalysisCachingServicesSupplier remoteAnalysisCachingServicesSupplier;
+  @Nullable private PersistentRemoteAnalysisCachingServicesSupplier supplier;
 
   @Override
   public void workspaceInit(
@@ -38,14 +51,26 @@ public class SerializationModule extends BlazeModule {
       // documentation HTML.
       return;
     }
+    this.directories = directories;
     // This is injected as a callback instead of evaluated eagerly to avoid forcing the somewhat
     // expensive AutoRegistry.get call on clients that don't require it.
     builder.setAnalysisCodecRegistrySupplier(
         getAnalysisCodecRegistrySupplier(runtime, directories));
 
-    remoteAnalysisCachingServicesSupplier = getAnalysisCachingServicesSupplier(runtime);
-    builder.setRemoteAnalysisCachingServicesSupplier(remoteAnalysisCachingServicesSupplier);
+    this.remoteAnalysisCachingServicesSupplier = getAnalysisCachingServicesSupplier(runtime);
+    if (this.remoteAnalysisCachingServicesSupplier instanceof PersistentRemoteAnalysisCachingServicesSupplier) {
+      this.supplier = (PersistentRemoteAnalysisCachingServicesSupplier) this.remoteAnalysisCachingServicesSupplier;
+    }
+    builder.setRemoteAnalysisCachingServicesSupplier(this.remoteAnalysisCachingServicesSupplier);
     builder.setFingerprinterForAnalysisCaching(getFingerprinterForAnalysisCaching());
+  }
+
+  @Override
+  public void beforeCommand(CommandEnvironment env) {
+    env.setVersionGetter(new MtimeVersionGetter());
+    if (this.supplier != null) {
+      this.supplier.beforeCommand(env);
+    }
   }
 
   @Override
@@ -78,7 +103,7 @@ public class SerializationModule extends BlazeModule {
   @ForOverride
   protected RemoteAnalysisCachingServicesSupplier getAnalysisCachingServicesSupplier(
       BlazeRuntime runtime) {
-    return InMemoryRemoteAnalysisCachingServicesSupplier.INSTANCE;
+    return new PersistentRemoteAnalysisCachingServicesSupplier(this.directories);
   }
 
   @ForOverride
@@ -86,22 +111,72 @@ public class SerializationModule extends BlazeModule {
     return FingerprintValueService.NONPROD_FINGERPRINTER;
   }
 
-  /** A supplier that uses an in-memory fingerprint value store. */
-  private static final class InMemoryRemoteAnalysisCachingServicesSupplier
+  /** A supplier that uses a persistent disk fingerprint value store. */
+  private static final class PersistentRemoteAnalysisCachingServicesSupplier
       implements RemoteAnalysisCachingServicesSupplier {
-    private static final InMemoryRemoteAnalysisCachingServicesSupplier INSTANCE =
-        new InMemoryRemoteAnalysisCachingServicesSupplier();
+    private final BlazeDirectories directories;
+    @Nullable private FingerprintValueStore store;
+    @Nullable private ListenableFuture<? extends FingerprintValueStore> storeFuture;
+    @Nullable private LocalAnalysisCacheClient client;
+    @Nullable private ListenableFuture<? extends RemoteAnalysisCacheClient> clientFuture;
+    private final GitWorkspaceState gitState;
 
-    private static final ListenableFuture<FingerprintValueStore>
-        // TODO: b/358347099 - use a persistent store
-        WRAPPED_STORE_INSTANCE = immediateFuture(new InMemoryFingerprintValueStore());
+    private PersistentRemoteAnalysisCachingServicesSupplier(BlazeDirectories directories) {
+      this.directories = directories;
+      this.gitState = new GitWorkspaceState(directories.getWorkspace());
+    }
 
-    @Override
-    public ListenableFuture<? extends FingerprintValueStore> getFingerprintValueStore() {
-      return WRAPPED_STORE_INSTANCE;
+    public void beforeCommand(CommandEnvironment env) {
+      gitState.update();
+      if (client != null) {
+        client.clearValidationCache();
+      }
     }
 
     @Override
-    public void resetCommandState() {}
+    public void configure(
+        RemoteAnalysisCachingConfig config, @Nullable ClientId clientId, String buildId)
+        throws com.google.devtools.build.lib.util.SerializedAbruptExitException {
+      if (config.mode() != RemoteAnalysisCacheMode.OFF && storeFuture == null) {
+        if (config.storageType() == RemoteAnalysisCacheStorageType.HDD
+            || config.storageType() == RemoteAnalysisCacheStorageType.BOTH) {
+          com.google.devtools.build.lib.vfs.Path cacheDir =
+              directories.getOutputBase().getRelative("skycache");
+          this.store = new DiskFingerprintValueStore(cacheDir);
+          this.storeFuture = immediateFuture(store);
+          this.client = new LocalAnalysisCacheClient(store, gitState, directExecutor());
+          this.clientFuture = immediateFuture(client);
+        } else {
+          this.store = new InMemoryFingerprintValueStore();
+          this.storeFuture = immediateFuture(store);
+          this.client = new LocalAnalysisCacheClient(store, gitState, directExecutor());
+          this.clientFuture = immediateFuture(client);
+        }
+      }
+    }
+
+    @Override
+    @Nullable
+    public ListenableFuture<? extends FingerprintValueStore> getFingerprintValueStore() {
+      return storeFuture;
+    }
+
+    @Override
+    @Nullable
+    public ListenableFuture<? extends RemoteAnalysisCacheClient> getAnalysisCacheClient() {
+      return clientFuture;
+    }
+
+    @Override
+    public void resetCommandState() {
+      // We keep the store across commands to avoid recreating the executor.
+    }
+
+    @Override
+    public void blazeShutdown() {
+      if (store != null) {
+        store.shutdown();
+      }
+    }
   }
 }

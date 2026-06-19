@@ -4348,7 +4348,24 @@ public abstract class SkyframeExecutor implements WalkableGraphFactory {
 
   protected final EvaluationContext.Builder newEvaluationContextBuilder() {
     return EvaluationContext.newBuilder()
-        .setUnnecessaryTemporaryStateDropperReceiver(unnecessaryTemporaryStateDropperReceiver);
+        .setUnnecessaryTemporaryStateDropperReceiver(unnecessaryTemporaryStateDropperReceiver)
+        .setKeySerializer(key -> {
+          try {
+            if (remoteAnalysisCacheReaderDepsProvider != null) {
+              com.google.devtools.build.lib.skyframe.serialization.ObjectCodecs codecs = remoteAnalysisCacheReaderDepsProvider.getObjectCodecs();
+              com.google.devtools.build.lib.skyframe.serialization.FingerprintValueService fvs = remoteAnalysisCacheReaderDepsProvider.getFingerprintValueService();
+              if (codecs != null && fvs != null) {
+                return codecs.serializeMemoizedAndBlocking(fvs, ImmutableClassToInstanceMap.of(), key).getObject().toByteArray();
+              }
+            }
+          } catch (Exception e) {
+            if (key.toString().contains("pkg:hello") || key.toString().contains("pkg/hello.txt")) {
+              System.err.println("DEBUG Skycache: Failed to serialize key " + key);
+              e.printStackTrace();
+            }
+          }
+          return null;
+        });
   }
 
   void dropUnnecessaryTemporarySkyframeState() {

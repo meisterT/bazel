@@ -43,6 +43,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import javax.annotation.Nullable;
 
@@ -76,7 +77,8 @@ public class ParallelEvaluator extends AbstractParallelEvaluator {
       QuiescingExecutor executor,
       CycleDetector cycleDetector,
       UnnecessaryTemporaryStateDropperReceiver unnecessaryTemporaryStateDropperReceiver,
-      Predicate<SkyKey> keepGoing) {
+      Predicate<SkyKey> keepGoing,
+      Function<SkyKey, byte[]> keySerializer) {
     super(
         graph,
         graphVersion,
@@ -90,7 +92,8 @@ public class ParallelEvaluator extends AbstractParallelEvaluator {
         graphInconsistencyReceiver,
         executor,
         cycleDetector,
-        keepGoing);
+        keepGoing,
+        keySerializer);
     this.unnecessaryTemporaryStateDropperReceiver = unnecessaryTemporaryStateDropperReceiver;
   }
 
@@ -190,7 +193,8 @@ public class ParallelEvaluator extends AbstractParallelEvaluator {
           ImmutableMap.of(ErrorTransienceValue.KEY, Delta.justNew(ErrorTransienceValue.INSTANCE)),
           evaluatorContext.getGraphVersion(),
           graph,
-          evaluatorContext.getProgressReceiver());
+          evaluatorContext.getProgressReceiver(),
+          evaluatorContext.getKeySerializer());
     }
   }
 
@@ -592,7 +596,8 @@ public class ParallelEvaluator extends AbstractParallelEvaluator {
       Map<SkyKey, Delta> injectionMap,
       Version version,
       ProcessableGraph graph,
-      InflightTrackingProgressReceiver progressReceiver)
+      InflightTrackingProgressReceiver progressReceiver,
+      @Nullable java.util.function.Function<SkyKey, byte[]> keySerializer)
       throws InterruptedException {
     NodeBatch prevNodeEntries =
         graph.createIfAbsentBatch(null, Reason.OTHER, injectionMap.keySet());
@@ -620,6 +625,7 @@ public class ParallelEvaluator extends AbstractParallelEvaluator {
       Version maxTransitiveSourceVersion =
           injectionEntry.getValue().newMaxTransitiveSourceVersion();
       prevEntry.setValue(value, version, maxTransitiveSourceVersion);
+      NshNodeEntry.computeAndSetNsh(prevEntry, key, value, keySerializer, ImmutableList.of());
       // Now that this key's injected value is set, it is no longer dirty.
       progressReceiver.injected(key);
     }

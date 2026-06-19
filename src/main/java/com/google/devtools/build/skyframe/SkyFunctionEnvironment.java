@@ -56,6 +56,12 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.function.Supplier;
 import javax.annotation.Nullable;
+import com.google.common.hash.HashCode;
+import com.google.common.hash.Hashing;
+import com.google.common.hash.Hasher;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 
 /**
  * A {@link SkyFunction.Environment} implementation for {@link ParallelEvaluator}.
@@ -984,6 +990,7 @@ public class SkyFunctionEnvironment extends AbstractSkyFunctionEnvironment
     // being written now is the same as the data already present in the entry. We detect this case
     // by comparing versions before and after setting the value.
     Version previousVersion = primaryEntry.getVersion();
+    computeAndSetNsh(primaryEntry);
     Set<SkyKey> reverseDeps =
         primaryEntry.setValue(
             valueWithMetadata, evaluatorContext.getGraphVersion(), maxTransitiveSourceVersion);
@@ -1004,6 +1011,31 @@ public class SkyFunctionEnvironment extends AbstractSkyFunctionEnvironment
             temporaryDirectDeps);
 
     return reverseDeps;
+  }
+
+  private void computeAndSetNsh(NodeEntry primaryEntry) throws InterruptedException {
+    if (!(primaryEntry instanceof NshNodeEntry nshEntry)) {
+      return;
+    }
+    
+    ImmutableList.Builder<NshNodeEntry> depNshs = ImmutableList.builder();
+    GroupedDeps directDeps = primaryEntry.getTemporaryDirectDeps();
+    if (!directDeps.isEmpty()) {
+      NodeBatch batch = evaluatorContext.getGraph().getBatch(skyKey, Reason.DEP_REQUESTED, directDeps.getAllElementsAsIterable());
+      for (SkyKey dep : directDeps.getAllElementsAsIterable()) {
+        NodeEntry depEntry = batch.get(dep);
+        if (depEntry instanceof NshNodeEntry nshDep) {
+          depNshs.add(nshDep);
+        }
+      }
+    }
+    
+    NshNodeEntry.computeAndSetNsh(
+        primaryEntry,
+        skyKey,
+        value,
+        evaluatorContext.getKeySerializer(),
+        depNshs.build());
   }
 
   @Nullable
