@@ -43,6 +43,7 @@ function set_up() {
   WORKSPACE_SUBDIR=$(basename $(mktemp -d ${WORKSPACE_DIR}/testXXXXXX))
   cd ${WORKSPACE_SUBDIR}
   BINS=$(bazel info $PRODUCT_NAME-bin)/${WORKSPACE_SUBDIR}
+  OUTPUT_BASE="$(bazel info output_base)"
 
   add_rules_java ${WORKSPACE_DIR}/MODULE.bazel
 
@@ -198,8 +199,7 @@ EOF
   assert_equals "1" $work_count
 }
 
-# Flaky
-function DISABLED_test_build_fails_when_worker_exits() {
+function test_build_succeeds_even_if_worker_exits() {
   prepare_example_worker
   cat >>BUILD <<'EOF'
 [work(
@@ -213,13 +213,20 @@ EOF
   bazel build :hello_world_1 &> $TEST_log \
     || fail "build failed"
 
-  bazel build --worker_verbose :hello_world_2 >> $TEST_log 2>&1 \
-    && fail "expected build to fail" || true
+  # Wait for worker process to fully exit.
+  local count=0
+  while pgrep -f "ExampleWorkerMultiplexer.*${OUTPUT_BASE}" > /dev/null; do
+    if [ $count -gt 100 ]; then
+      fail "Worker did not exit in time"
+    fi
+    sleep 0.1
+    count=$((count + 1))
+  done
 
-  error_msgs=$(egrep -o -- 'Worker process (did not return a|returned an unparseable) WorkResponse' "$TEST_log")
+  bazel build --worker_verbose :hello_world_2 &>> $TEST_log \
+    || fail "build failed"
 
-  [ -n "$error_msgs" ] \
-    || fail "expected error message not found"
+  expect_log "Work multiplex-worker (id [0-9]\+) has unexpectedly died with exit code 0."
 }
 
 function test_worker_restarts_when_worker_binary_changes() {

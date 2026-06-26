@@ -488,9 +488,9 @@ public class WorkerMultiplexer {
     }
   }
 
-  /** Returns true if this process has died for other reasons than a call to {@code #destroy()}. */
   boolean diedUnexpectedly() {
-    return this.process != null && !this.process.isAlive() && !status.isKilled();
+    return this.process != null && !this.process.isAlive()
+        && (!status.isKilled() || status.get() == Status.KILLED_UNKNOWN);
   }
 
   /** Returns the exit value of multiplexer's process, if it has exited. */

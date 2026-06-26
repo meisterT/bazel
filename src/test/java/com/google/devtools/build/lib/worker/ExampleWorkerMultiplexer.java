@@ -90,6 +90,7 @@ public class ExampleWorkerMultiplexer {
       Preconditions.checkState(workerOptions.getPersistentWorker());
 
       runPersistentWorker(workerOptions);
+      System.exit(0);
     } else {
       // This is a single invocation of the example that exits after it processed the request.
       processRequest(parserHelper(ImmutableList.copyOf(args)), WorkRequest.getDefaultInstance());
@@ -106,7 +107,15 @@ public class ExampleWorkerMultiplexer {
 
     while (true) {
       try {
-        WorkRequest request = WorkRequest.parseDelimitedFrom(System.in);
+        WorkRequest request;
+        try {
+          request = WorkRequest.parseDelimitedFrom(System.in);
+        } catch (IOException e) {
+          if (workerOptions.getExitAfter() > 0 && workUnitCounter > workerOptions.getExitAfter()) {
+            break;
+          }
+          throw e;
+        }
         if (request == null) {
           break;
         }
