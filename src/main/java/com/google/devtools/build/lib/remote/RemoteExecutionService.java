@@ -366,7 +366,10 @@ public class RemoteExecutionService {
   }
 
   @Nullable
-  private static ByteString buildSalt(Spawn spawn, @Nullable SpawnScrubber spawnScrubber) {
+  private static ByteString buildSalt(
+      Spawn spawn,
+      Collection<String> inheritedEnvVars,
+      @Nullable SpawnScrubber spawnScrubber) {
     CacheSalt.Builder saltBuilder =
         CacheSalt.newBuilder().setMayBeExecutedRemotely(Spawns.mayBeExecutedRemotely(spawn));
 
@@ -379,6 +382,10 @@ public class RemoteExecutionService {
     if (spawnScrubber != null) {
       saltBuilder.setScrubSalt(
           CacheSalt.ScrubSalt.newBuilder().setSalt(spawnScrubber.getSalt()).build());
+    }
+
+    if (!inheritedEnvVars.isEmpty()) {
+      saltBuilder.addAllInheritedEnvironmentVariables(new TreeSet<>(inheritedEnvVars));
     }
 
     return saltBuilder.build().toByteString();
@@ -542,12 +549,25 @@ public class RemoteExecutionService {
           PlatformUtils.getPlatformProto(spawn, remoteOptions, additionalPropertiesBuilder.build());
 
       SpawnScrubber spawnScrubber = scrubber != null ? scrubber.forSpawn(spawn) : null;
+      ImmutableMap<String, String> executionEnv = spawn.getEnvironment();
+      ActionExecutionMetadata resourceOwner = spawn.getResourceOwner();
+      Collection<String> clientEnvVars =
+          resourceOwner != null ? resourceOwner.getClientEnvironmentVariables() : ImmutableSet.of();
+      if (!clientEnvVars.isEmpty()) {
+        ImmutableMap.Builder<String, String> filteredEnvBuilder = ImmutableMap.builder();
+        for (Map.Entry<String, String> entry : executionEnv.entrySet()) {
+          if (!clientEnvVars.contains(entry.getKey())) {
+            filteredEnvBuilder.put(entry);
+          }
+        }
+        executionEnv = filteredEnvBuilder.buildKeepingLast();
+      }
       Command command =
           buildCommand(
               useOutputPaths(),
               spawn.getOutputFiles(),
               spawn.getArguments(),
-              spawn.getEnvironment(),
+              executionEnv,
               platform,
               remotePathResolver,
               spawnScrubber,
@@ -560,7 +580,7 @@ public class RemoteExecutionService {
               platform,
               context.getTimeout(),
               Spawns.mayBeCachedRemotely(spawn),
-              buildSalt(spawn, spawnScrubber));
+              buildSalt(spawn, clientEnvVars, spawnScrubber));
 
       ActionKey actionKey = digestUtil.computeActionKey(action);
 

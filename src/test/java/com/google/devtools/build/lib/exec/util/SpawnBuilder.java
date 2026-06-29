@@ -58,6 +58,7 @@ public final class SpawnBuilder {
   private ResourceSet resourceSet = ResourceSet.ZERO;
   private PathMapper pathMapper = PathMapper.NOOP;
   private boolean builtForToolConfiguration;
+  private ImmutableSet<String> clientEnvVars = ImmutableSet.of();
 
   public SpawnBuilder(String... args) {
     this.args = ImmutableList.copyOf(args);
@@ -73,7 +74,8 @@ public final class SpawnBuilder {
             ownerPrimaryOutput,
             platform,
             execProperties,
-            builtForToolConfiguration);
+            builtForToolConfiguration,
+            clientEnvVars);
     return new SimpleSpawn(
         owner,
         ImmutableList.copyOf(args),
@@ -257,6 +259,12 @@ public final class SpawnBuilder {
   @CanIgnoreReturnValue
   public SpawnBuilder setBuiltForToolConfiguration(boolean builtForToolConfiguration) {
     this.builtForToolConfiguration = builtForToolConfiguration;
+    return this;
+  }
+
+  @CanIgnoreReturnValue
+  public SpawnBuilder withClientEnvVars(String... clientEnvVars) {
+    this.clientEnvVars = ImmutableSet.copyOf(clientEnvVars);
     return this;
   }
 }

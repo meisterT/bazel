@@ -40,4 +40,9 @@ message CacheSalt {
   // Ensures that a scrubbed spawn can never collide with a non-scrubbed one.
   // See the documentation for the --experimental_remote_scrub_config flag.
   ScrubSalt scrub_salt = 3;
+
+  // The names of inherited environment variables. This ensures that actions
+  // with different inherited environment variables have different cache keys
+  // even if their resolved values are not in the command environment.
+  repeated string inherited_environment_variables = 4;
 }

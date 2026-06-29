@@ -46,6 +46,28 @@ public class FakeOwner implements ActionExecutionMetadata {
   @Nullable private final PlatformInfo platform;
   private final ImmutableMap<String, String> combinedExecProperties;
   private final boolean isBuiltForToolConfiguration;
+  private final ImmutableSet<String> clientEnvVars;
+
+  FakeOwner(
+      String mnemonic,
+      String progressMessage,
+      String ownerLabel,
+      String ownerRuleKind,
+      @Nullable Artifact primaryOutput,
+      @Nullable PlatformInfo platform,
+      ImmutableMap<String, String> combinedExecProperties,
+      boolean isBuiltForToolConfiguration,
+      ImmutableSet<String> clientEnvVars) {
+    this.mnemonic = mnemonic;
+    this.progressMessage = progressMessage;
+    this.ownerLabel = ownerLabel;
+    this.ownerRuleKind = checkNotNull(ownerRuleKind);
+    this.primaryOutput = primaryOutput;
+    this.platform = platform;
+    this.combinedExecProperties = combinedExecProperties;
+    this.isBuiltForToolConfiguration = isBuiltForToolConfiguration;
+    this.clientEnvVars = checkNotNull(clientEnvVars);
+  }
 
   FakeOwner(
       String mnemonic,
@@ -56,14 +78,16 @@ public class FakeOwner implements ActionExecutionMetadata {
       @Nullable PlatformInfo platform,
       ImmutableMap<String, String> combinedExecProperties,
       boolean isBuiltForToolConfiguration) {
-    this.mnemonic = mnemonic;
-    this.progressMessage = progressMessage;
-    this.ownerLabel = ownerLabel;
-    this.ownerRuleKind = checkNotNull(ownerRuleKind);
-    this.primaryOutput = primaryOutput;
-    this.platform = platform;
-    this.combinedExecProperties = combinedExecProperties;
-    this.isBuiltForToolConfiguration = isBuiltForToolConfiguration;
+    this(
+        mnemonic,
+        progressMessage,
+        ownerLabel,
+        ownerRuleKind,
+        primaryOutput,
+        platform,
+        combinedExecProperties,
+        isBuiltForToolConfiguration,
+        ImmutableSet.of());
   }
 
   private FakeOwner(
@@ -76,7 +100,8 @@ public class FakeOwner implements ActionExecutionMetadata {
         /* primaryOutput= */ null,
         platform,
         ImmutableMap.of(),
-        /* isBuiltForToolConfiguration= */ false);
+        /* isBuiltForToolConfiguration= */ false,
+        ImmutableSet.of());
   }
 
   public FakeOwner(String mnemonic, String progressMessage, String ownerLabel) {
@@ -153,7 +178,7 @@ public class FakeOwner implements ActionExecutionMetadata {
 
   @Override
   public Collection<String> getClientEnvironmentVariables() {
-    throw new UnsupportedOperationException();
+    return clientEnvVars;
   }
 
   @Override

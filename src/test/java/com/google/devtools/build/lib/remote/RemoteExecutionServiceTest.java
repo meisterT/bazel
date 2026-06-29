@@ -149,6 +149,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Map;
 import java.util.Random;
 import java.util.SortedMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
@@ -3264,6 +3265,36 @@ public class RemoteExecutionServiceTest {
         throw new UnsupportedOperationException();
       }
     };
+  }
+
+  @Test
+  public void buildRemoteAction_inheritedEnvironmentVariables_filteredAndAddedToSalt() throws Exception {
+    Spawn spawn =
+        new SpawnBuilder("dummy")
+            .withEnvironment("FOO", "foo_val")
+            .withEnvironment("BAR", "bar_val")
+            .withClientEnvVars("FOO")
+            .build();
+    FakeSpawnExecutionContext context = newSpawnExecutionContext(spawn);
+    RemoteExecutionService service = newRemoteExecutionService();
+
+    RemoteAction remoteAction = service.buildRemoteAction(spawn, context);
+
+    // Verify command environment does not contain FOO, but contains BAR
+    Map<String, String> commandEnv = remoteAction.getCommand().getEnvironmentVariablesList().stream()
+        .collect(ImmutableMap.toImmutableMap(
+            Command.EnvironmentVariable::getName,
+            Command.EnvironmentVariable::getValue));
+    assertThat(commandEnv).doesNotContainKey("FOO");
+    assertThat(commandEnv).containsEntry("BAR", "bar_val");
+
+    // Verify CacheSalt contains "FOO" in inherited_environment_variables
+    CacheSalt expectedSalt =
+        CacheSalt.newBuilder()
+            .setMayBeExecutedRemotely(true)
+            .addInheritedEnvironmentVariables("FOO")
+            .build();
+    assertThat(remoteAction.getAction().getSalt()).isEqualTo(expectedSalt.toByteString());
   }
 
   private void createOutputDirectories(Spawn spawn) throws IOException {
