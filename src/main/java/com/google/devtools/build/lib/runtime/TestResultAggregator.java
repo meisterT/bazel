@@ -30,8 +30,11 @@ import com.google.devtools.build.lib.packages.TestSize;
 import com.google.devtools.build.lib.packages.TestTimeout;
 import com.google.devtools.build.lib.vfs.Path;
 import com.google.devtools.build.lib.view.test.TestStatus.BlazeTestStatus;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import com.google.devtools.build.lib.analysis.test.TestConfiguration.TestOptions;
 
 /** This class aggregates and reports target-wide test statuses in real-time. */
 @ThreadSafety.ThreadSafe
@@ -256,7 +259,8 @@ final class TestResultAggregator {
               policy.testVerboseTimeoutWarnings,
               warnings,
               result.getData().getTestProcessTimesList(),
-              target);
+              target,
+              existingSummary.getConfiguration());
     }
 
     summary
@@ -302,7 +306,8 @@ final class TestResultAggregator {
       boolean verbose,
       List<String> warnings,
       List<Long> testTimes,
-      TransitiveInfoCollection target) {
+      TransitiveInfoCollection target,
+      BuildConfigurationValue configuration) {
 
     TestTimeout specifiedTimeout =
         target.getProvider(TestProvider.class).getTestParams().getTimeout();
@@ -316,8 +321,19 @@ final class TestResultAggregator {
 
     int maxTimeInSeconds = (int) (maxTimeOfShard / 1000);
 
-    if (!specifiedTimeout.isInRangeFuzzy(maxTimeInSeconds)) {
-      TestTimeout expectedTimeout = TestTimeout.getSuggestedTestTimeout(maxTimeInSeconds);
+    Map<TestTimeout, Duration> overriddenTimeouts = null;
+    if (configuration != null && configuration.getOptions() != null) {
+      TestOptions testOptions = configuration.getOptions().get(TestOptions.class);
+      if (testOptions != null) {
+        overriddenTimeouts = testOptions.getTestTimeout();
+      }
+    }
+
+    boolean inRange = specifiedTimeout.isInRangeFuzzy(maxTimeInSeconds, overriddenTimeouts);
+
+    if (!inRange) {
+      TestTimeout expectedTimeout =
+          TestTimeout.getSuggestedTestTimeout(maxTimeInSeconds, overriddenTimeouts);
       TestSize expectedSize = TestSize.getTestSize(expectedTimeout);
       if (verbose) {
         StringBuilder builder =

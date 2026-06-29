@@ -182,6 +182,29 @@ public enum TestTimeout {
     return TIMEOUT_FUZZY_RANGE.get(this).contains(timeInSeconds);
   }
 
+  /** Returns true iff the given time is in the fuzzy range for this timeout under custom timeouts. */
+  public boolean isInRangeFuzzy(int timeInSeconds, @Nullable Map<TestTimeout, Duration> timeouts) {
+    if (timeouts == null) {
+      return isInRangeFuzzy(timeInSeconds);
+    }
+    int maxTimeout = 365 * 24 * 60 * 60; // One year
+    int T = (int) timeouts.getOrDefault(this, getTimeout()).getSeconds();
+
+    int T_prev = 0;
+    if (this == MODERATE) {
+      T_prev = (int) timeouts.getOrDefault(SHORT, SHORT.getTimeout()).getSeconds();
+    } else if (this == LONG) {
+      T_prev = (int) timeouts.getOrDefault(MODERATE, MODERATE.getTimeout()).getSeconds();
+    } else if (this == ETERNAL) {
+      T_prev = (int) timeouts.getOrDefault(LONG, LONG.getTimeout()).getSeconds();
+    }
+
+    int minFuzzy = T_prev / 2;
+    int maxFuzzy = (this == ETERNAL) ? maxTimeout : (int) (T * 0.9);
+
+    return timeInSeconds >= minFuzzy && timeInSeconds < maxFuzzy;
+  }
+
   /**
    * Returns suggested test size for the given time in seconds.
    *
@@ -190,6 +213,25 @@ public enum TestTimeout {
    */
   public static TestTimeout getSuggestedTestTimeout(int timeInSeconds) {
     return SUGGESTED_TIMEOUT.get(timeInSeconds);
+  }
+
+  /** Returns suggested test size for the given time under custom timeouts. */
+  public static TestTimeout getSuggestedTestTimeout(
+      int timeInSeconds, @Nullable Map<TestTimeout, Duration> timeouts) {
+    if (timeouts == null) {
+      return getSuggestedTestTimeout(timeInSeconds);
+    }
+    int maxTimeout = 365 * 24 * 60 * 60;
+    int previousMaxSuggested = 0;
+    for (TestTimeout timeout : values()) {
+      int T = (int) timeouts.getOrDefault(timeout, timeout.getTimeout()).getSeconds();
+      int maxSuggested = (timeout == ETERNAL) ? maxTimeout : (int) (T * 0.75);
+      if (timeInSeconds >= previousMaxSuggested && timeInSeconds < maxSuggested) {
+        return timeout;
+      }
+      previousMaxSuggested = maxSuggested;
+    }
+    return ETERNAL;
   }
 
   /** Converter for the --test_timeout option. */

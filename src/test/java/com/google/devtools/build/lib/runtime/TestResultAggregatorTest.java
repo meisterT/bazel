@@ -28,6 +28,7 @@ import com.google.devtools.build.lib.actions.ArtifactRoot.RootType;
 import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
 import com.google.devtools.build.lib.analysis.ConfiguredTarget;
 import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
+import com.google.devtools.build.lib.analysis.test.TestConfiguration.TestOptions;
 import com.google.devtools.build.lib.analysis.test.TestProvider;
 import com.google.devtools.build.lib.analysis.test.TestProvider.TestParams;
 import com.google.devtools.build.lib.analysis.test.TestResult;
@@ -39,6 +40,9 @@ import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
 import com.google.devtools.build.lib.view.test.TestStatus.BlazeTestStatus;
 import com.google.devtools.build.lib.view.test.TestStatus.TestResultData;
 import java.io.IOException;
+import java.time.Duration;
+import java.util.EnumMap;
+import java.util.Map;
 import java.util.stream.IntStream;
 import org.junit.Before;
 import org.junit.Test;
@@ -287,5 +291,131 @@ public final class TestResultAggregatorTest {
         ImmutableMultimap.of(),
         /* cached= */ false,
         /* systemFailure= */ null);
+  }
+
+  private TestResultAggregator createAggregatorWithCustomTimeouts(
+      int testRuns,
+      TestTimeout timeout,
+      Map<TestTimeout, Duration> customTimeouts) {
+    ArtifactRoot root =
+        ArtifactRoot.asDerivedRoot(
+            new InMemoryFileSystem(DigestHashFunction.SHA256).getPath("/output_base"),
+            RootType.OUTPUT,
+            "execroot");
+    when(mockParams.getTestStatusArtifacts())
+        .thenReturn(
+            IntStream.range(0, testRuns)
+                .mapToObj(
+                    i -> (DerivedArtifact) ActionsTestUtil.createArtifact(root, "status." + i))
+                .collect(toImmutableList()));
+    when(mockParams.getRuns()).thenReturn(testRuns);
+    when(mockParams.getTimeout()).thenReturn(timeout);
+
+    ConfiguredTarget mockTarget = mock(ConfiguredTarget.class);
+    when(mockTarget.getProvider(TestProvider.class)).thenReturn(new TestProvider(mockParams));
+
+    BuildConfigurationValue mockConfig = mock(BuildConfigurationValue.class);
+    com.google.devtools.build.lib.analysis.config.BuildOptions mockBuildOptions =
+        mock(com.google.devtools.build.lib.analysis.config.BuildOptions.class);
+    TestOptions mockTestOptions = mock(TestOptions.class);
+    when(mockConfig.getOptions()).thenReturn(mockBuildOptions);
+    when(mockBuildOptions.get(TestOptions.class)).thenReturn(mockTestOptions);
+    when(mockTestOptions.getTestTimeout()).thenReturn(customTimeouts);
+
+    return new TestResultAggregator(
+        mockTarget,
+        mockConfig,
+        new AggregationPolicy(
+            new EventBus(),
+            /* testCheckUpToDate= */ false,
+            /* testVerboseTimeoutWarnings= */ true),
+        /* skippedThisTest= */ false);
+  }
+
+  private TestResultAggregator createAggregatorWithVerboseWarnings(
+      int testRuns, TestTimeout timeout) {
+    ArtifactRoot root =
+        ArtifactRoot.asDerivedRoot(
+            new InMemoryFileSystem(DigestHashFunction.SHA256).getPath("/output_base"),
+            RootType.OUTPUT,
+            "execroot");
+    when(mockParams.getTestStatusArtifacts())
+        .thenReturn(
+            IntStream.range(0, testRuns)
+                .mapToObj(
+                    i -> (DerivedArtifact) ActionsTestUtil.createArtifact(root, "status." + i))
+                .collect(toImmutableList()));
+    when(mockParams.getRuns()).thenReturn(testRuns);
+    when(mockParams.getTimeout()).thenReturn(timeout);
+
+    ConfiguredTarget mockTarget = mock(ConfiguredTarget.class);
+    when(mockTarget.getProvider(TestProvider.class)).thenReturn(new TestProvider(mockParams));
+
+    return new TestResultAggregator(
+        mockTarget,
+        mock(BuildConfigurationValue.class),
+        new AggregationPolicy(
+            new EventBus(),
+            /* testCheckUpToDate= */ false,
+            /* testVerboseTimeoutWarnings= */ true),
+        /* skippedThisTest= */ false);
+  }
+
+  @Test
+  public void testTimeoutWarning_defaultTimeout_warnsIfOutsideRange() throws Exception {
+    TestResultAggregator underTest = createAggregatorWithVerboseWarnings(1, TestTimeout.SHORT);
+
+    // Short default timeout is 60s. Fuzzy range is [0, 54s). 70s is outside.
+    underTest.testEvent(
+        testResult(
+            TestResultData.newBuilder().setStatus(BlazeTestStatus.PASSED).addTestProcessTimes(70000L),
+            /*locallyCached=*/ false));
+
+    TestSummary summary = underTest.aggregateAndReportSummary(false);
+    assertThat(summary.getWarnings()).hasSize(1);
+    assertThat(summary.getWarnings().get(0)).contains("outside of range for SHORT tests");
+  }
+
+  @Test
+  public void testTimeoutWarning_customTimeout_doesNotWarnIfInsideRange() throws Exception {
+    Map<TestTimeout, Duration> customTimeouts = new EnumMap<>(TestTimeout.class);
+    customTimeouts.put(TestTimeout.SHORT, Duration.ofSeconds(80));
+    customTimeouts.put(TestTimeout.MODERATE, Duration.ofSeconds(300));
+    customTimeouts.put(TestTimeout.LONG, Duration.ofSeconds(900));
+    customTimeouts.put(TestTimeout.ETERNAL, Duration.ofSeconds(3600));
+
+    TestResultAggregator underTest =
+        createAggregatorWithCustomTimeouts(1, TestTimeout.SHORT, customTimeouts);
+
+    // Overridden short timeout is 80s. Fuzzy range is [0, 72s). 70s is inside.
+    underTest.testEvent(
+        testResult(
+            TestResultData.newBuilder().setStatus(BlazeTestStatus.PASSED).addTestProcessTimes(70000L),
+            /*locallyCached=*/ false));
+
+    TestSummary summary = underTest.aggregateAndReportSummary(false);
+    assertThat(summary.getWarnings()).isEmpty();
+  }
+
+  @Test
+  public void testTimeoutWarning_customTimeout_warnsIfOutsideRange() throws Exception {
+    Map<TestTimeout, Duration> customTimeouts = new EnumMap<>(TestTimeout.class);
+    customTimeouts.put(TestTimeout.SHORT, Duration.ofSeconds(80));
+    customTimeouts.put(TestTimeout.MODERATE, Duration.ofSeconds(300));
+    customTimeouts.put(TestTimeout.LONG, Duration.ofSeconds(900));
+    customTimeouts.put(TestTimeout.ETERNAL, Duration.ofSeconds(3600));
+
+    TestResultAggregator underTest =
+        createAggregatorWithCustomTimeouts(1, TestTimeout.SHORT, customTimeouts);
+
+    // Overridden short timeout is 80s. Fuzzy range is [0, 72s). 75s is outside.
+    underTest.testEvent(
+        testResult(
+            TestResultData.newBuilder().setStatus(BlazeTestStatus.PASSED).addTestProcessTimes(75000L),
+            /*locallyCached=*/ false));
+
+    TestSummary summary = underTest.aggregateAndReportSummary(false);
+    assertThat(summary.getWarnings()).hasSize(1);
+    assertThat(summary.getWarnings().get(0)).contains("outside of range for SHORT tests");
   }
 }
