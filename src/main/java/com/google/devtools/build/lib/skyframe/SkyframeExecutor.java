@@ -3089,6 +3089,9 @@ public abstract class SkyframeExecutor implements WalkableGraphFactory {
       ExtendedEventHandler eventHandler)
       throws AbruptExitException {
     PackageOptions packageOptions = options.getOptions(PackageOptions.class);
+    PrecomputedValue.ALLOW_DIRECTORY_ARTIFACTS_CROSSING_PACKAGE_BOUNDARIES.set(
+        injectable(),
+        packageOptions.getAllowDirectoryArtifactsCrossingPackageBoundaries());
     try (SilentCloseable c = Profiler.instance().profile("preparePackageLoading")) {
       preparePackageLoading(
           pathPackageLocator,

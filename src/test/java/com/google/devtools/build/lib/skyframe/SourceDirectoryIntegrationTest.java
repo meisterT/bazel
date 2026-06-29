@@ -245,6 +245,16 @@ public final class SourceDirectoryIntegrationTest extends BuildIntegrationTestCa
   }
 
   @Test
+  public void crossingPackageBoundary_allowedWithFlag() throws Exception {
+    createEmptyFile(sourceDir.getRelative("subdir/BUILD"));
+    addOptions("--experimental_allow_directory_artifacts_crossing_package_boundaries");
+    buildTarget("//foo");
+    assertContainsEvent(
+        "Directory artifact foo/dir crosses package boundary into package rooted at"
+            + " foo/dir/subdir");
+  }
+
+  @Test
   public void infiniteSymlinkExpansion_fails() throws Exception {
     Path dir = sourceDir.getRelative("subdir/nested2");
     dir.delete();

@@ -102,6 +102,9 @@ public final class PrecomputedValue implements SkyValue {
   public static final Precomputed<Boolean> REMOTE_EXECUTION_ENABLED =
       new Precomputed<>("remote_execution_enabled");
 
+  public static final Precomputed<Boolean> ALLOW_DIRECTORY_ARTIFACTS_CROSSING_PACKAGE_BOUNDARIES =
+      new Precomputed<>("allow_directory_artifacts_crossing_package_boundaries");
+
   public static final Precomputed<LazyMacroExpansionPackages> LAZY_MACRO_EXPANSION_PACKAGES =
       new Precomputed<>("lazy_macro_expansion_packages");
 

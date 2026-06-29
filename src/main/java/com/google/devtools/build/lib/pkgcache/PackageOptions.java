@@ -203,6 +203,18 @@ public abstract class PackageOptions extends OptionsBase {
   public abstract void setCheckOutputFiles(boolean value);
 
   @Option(
+      name = "experimental_allow_directory_artifacts_crossing_package_boundaries",
+      defaultValue = "false",
+      documentationCategory = OptionDocumentationCategory.INPUT_STRICTNESS,
+      effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS},
+      metadataTags = {OptionMetadataTag.EXPERIMENTAL},
+      help =
+          "If true, allow directory artifacts to cross package boundaries into subpackages "
+              + "without failing the build. Use with caution: this can lead to incorrect "
+              + "incremental builds.")
+  public abstract boolean getAllowDirectoryArtifactsCrossingPackageBoundaries();
+
+  @Option(
       name = "experimental_check_external_other_files",
       defaultValue = "true",
       documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,

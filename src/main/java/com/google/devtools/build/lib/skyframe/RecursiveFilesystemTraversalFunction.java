@@ -180,6 +180,11 @@ public final class RecursiveFilesystemTraversalFunction implements SkyFunction {
   public RecursiveFilesystemTraversalValue compute(SkyKey skyKey, Environment env)
       throws RecursiveFilesystemTraversalFunctionException, InterruptedException {
     TraversalRequest traversal = (TraversalRequest) skyKey.argument();
+    Boolean allowCrossing =
+        PrecomputedValue.ALLOW_DIRECTORY_ARTIFACTS_CROSSING_PACKAGE_BOUNDARIES.get(env);
+    if (allowCrossing == null) {
+      return null;
+    }
     try (SilentCloseable c =
         Profiler.instance()
             .profile(ProfilerTask.FILESYSTEM_TRAVERSAL, traversal.root().toString())) {
@@ -238,9 +243,13 @@ public final class RecursiveFilesystemTraversalFunction implements SkyFunction {
             traversal.errorInfo()
                 + " crosses package boundary into package rooted at "
                 + traversal.root().getRelativePart().getPathString();
-        throw new RecursiveFilesystemTraversalFunctionException(
-            new RecursiveFilesystemTraversalException(
-                msg, RecursiveFilesystemTraversalException.Type.CANNOT_CROSS_PACKAGE_BOUNDARY));
+        if (allowCrossing) {
+          env.getListener().handle(com.google.devtools.build.lib.events.Event.warn(msg));
+        } else {
+          throw new RecursiveFilesystemTraversalFunctionException(
+              new RecursiveFilesystemTraversalException(
+                  msg, RecursiveFilesystemTraversalException.Type.CANNOT_CROSS_PACKAGE_BOUNDARY));
+        }
       }
 
       // We are free to traverse this directory.
