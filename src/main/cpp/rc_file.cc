@@ -140,6 +140,17 @@ RcFile::ParseError RcFile::ParseFile(
     if (words.empty()) continue;
 
     const absl::string_view command = words[0];
+    if (absl::StrContains(command, ':')) {
+      std::vector<absl::string_view> parts = absl::StrSplit(command, ':');
+      for (absl::string_view part : parts) {
+        if (part.empty()) {
+          *error_text = absl::StrFormat(
+              "Invalid command or config name in config file '%s': '%s'",
+              canonical_filename, command);
+          return ParseError::INVALID_FORMAT;
+        }
+      }
+    }
     if (command != kCommandImport && command != kCommandTryImport &&
         command != kCommandTryImportIfBazelVersion) {
       if (words.size() == 1 && absl::StrContains(command, ':')) {

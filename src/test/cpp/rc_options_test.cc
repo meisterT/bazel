@@ -488,6 +488,34 @@ TEST_F(RcOptionsTest, TryImportHasTooManyArgs) {
                    "'.*bad_import.bazelrc': 'try-import somefile bar'"));
 }
 
+TEST_F(RcOptionsTest, ForbidEmptyConfigOrCommandName) {
+  {
+    WriteRc("empty_config.bazelrc", "common: -c opt");
+    RcFile::ParseError error;
+    std::string error_text;
+    std::unique_ptr<RcFile> rc = Parse("empty_config.bazelrc", &error, &error_text);
+    EXPECT_EQ(error, RcFile::ParseError::INVALID_FORMAT);
+    EXPECT_NE(error_text.find("Invalid command or config name"), std::string::npos);
+  }
+  {
+    WriteRc("empty_command.bazelrc", ":foo -c opt");
+    RcFile::ParseError error;
+    std::string error_text;
+    std::unique_ptr<RcFile> rc = Parse("empty_command.bazelrc", &error, &error_text);
+    EXPECT_EQ(error, RcFile::ParseError::INVALID_FORMAT);
+    EXPECT_NE(error_text.find("Invalid command or config name"), std::string::npos);
+  }
+  {
+    WriteRc("empty_middle.bazelrc", "common::foo -c opt");
+    RcFile::ParseError error;
+    std::string error_text;
+    std::unique_ptr<RcFile> rc = Parse("empty_middle.bazelrc", &error, &error_text);
+    EXPECT_EQ(error, RcFile::ParseError::INVALID_FORMAT);
+    EXPECT_NE(error_text.find("Invalid command or config name"), std::string::npos);
+  }
+}
+
+
 // TODO(b/34811299) The tests below identify ways that '\' used as a line
 // continuation is broken. This is on top of user-reported cases where an
 // unintentional '\' made the command on the following line show up as
