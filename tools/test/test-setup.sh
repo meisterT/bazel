@@ -33,7 +33,9 @@ EXEC_ROOT="$PWD"
 # Declare that the executable is running in a `bazel test` environment
 # This allows test frameworks to enable output to the unprefixed environment variable
 # For example, if `BAZEL_TEST` and `XML_OUTPUT_FILE` are defined, write JUnit output
-export BAZEL_TEST=1
+if [[ -z "${BUILD_WORKSPACE_DIRECTORY:-}" ]]; then
+  export BAZEL_TEST=1
+fi
 
 # Bazel sets some environment vars to relative paths to improve caching and
 # support remote execution, where the absolute path may not be known to Bazel.

@@ -1051,6 +1051,43 @@ EOF
   expect_log "Running in $(pwd)"
 }
 
+function test_bazel_test_env_var_not_set_in_bazel_run() {
+  add_rules_shell "MODULE.bazel"
+  local -r pkg="pkg${LINENO}"
+  mkdir -p "${pkg}"
+  cat > "$pkg/BUILD" <<'EOF'
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+sh_test(
+  name = "foo_test",
+  srcs = ["foo_test.sh"],
+)
+EOF
+  cat > "$pkg/foo_test.sh" <<'EOF'
+#!/usr/bin/env bash
+if [[ -n "${BAZEL_TEST:-}" ]]; then
+  echo "BAZEL_TEST IS SET TO: $BAZEL_TEST"
+else
+  echo "BAZEL_TEST IS NOT SET"
+fi
+exit 0
+EOF
+  chmod +x "$pkg/foo_test.sh"
+
+  # bazel test should set BAZEL_TEST=1
+  bazel test "//$pkg:foo_test" &> "$TEST_log" || {
+    cat $(bazel info bazel-testlogs)/$pkg/foo_test/test.log
+    fail "bazel test failed"
+  }
+  local test_log=$(bazel info bazel-testlogs)/$pkg/foo_test/test.log
+  grep "BAZEL_TEST IS SET TO: 1" "$test_log" || fail "BAZEL_TEST was not set during bazel test"
+
+  # bazel run should NOT set BAZEL_TEST
+  bazel run "//$pkg:foo_test" &> "$TEST_log" || fail "bazel run failed"
+  expect_log "BAZEL_TEST IS NOT SET"
+  expect_not_log "BAZEL_TEST IS SET TO"
+}
+
 # Usage: assert_starts_with PREFIX STRING_TO_CHECK.
 # Asserts that `$1` is a prefix of `$2`.
 function assert_starts_with() {

@@ -654,9 +654,12 @@ bool ExportGtestVariables(const Path& test_tmpdir) {
 }
 
 bool ExportMiscEnvvars(const Path& cwd) {
-  // Add BAZEL_TEST environment variable.
-  if (!SetEnv(L"BAZEL_TEST", L"1")) {
-    return false;
+  // Add BAZEL_TEST environment variable if not running via "bazel run".
+  if (GetEnvironmentVariableW(L"BUILD_WORKSPACE_DIRECTORY", nullptr, 0) == 0 &&
+      GetLastError() == ERROR_ENVVAR_NOT_FOUND) {
+    if (!SetEnv(L"BAZEL_TEST", L"1")) {
+      return false;
+    }
   }
 
   for (const wchar_t* name :

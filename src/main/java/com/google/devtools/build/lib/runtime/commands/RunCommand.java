@@ -219,6 +219,7 @@ public class RunCommand implements BlazeCommand {
           // These variables are all used by runfiles libraries to locate the runfiles directory or
           // manifest and can cause incorrect behavior when set for the top-level binary run with
           // bazel run.
+          "BAZEL_TEST",
           "JAVA_RUNFILES",
           "RUNFILES_DIR",
           "RUNFILES_MANIFEST_FILE",
